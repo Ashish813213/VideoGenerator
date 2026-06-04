@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VideoGen — Script to Video</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">▶</span>
+      <h1>VideoGen</h1>
+      <span class="tag">script → narrated video</span>
+    </div>
+    <div class="status-pill" id="serverStatus" title="Server health">
+      <span class="dot"></span><span id="serverStatusText">checking…</span>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="card input-card">
+      <h2>1. Paste your script</h2>
+      <p class="hint">Plain text. The AI will narrate it and create a 1920×1080 video with relevant images. Max 5,000 characters.</p>
+      <textarea
+        id="script"
+        rows="8"
+        maxlength="5000"
+        placeholder="e.g. Mitochondria are often called the powerhouses of the cell. They convert glucose and oxygen into ATP, the energy currency that fuels nearly every cellular process…"
+      ></textarea>
+      <div class="row">
+        <span class="char-count"><span id="charCount">0</span> / 5000</span>
+        <div class="examples">
+          <button type="button" class="example-btn" data-example="mitochondria">Mitochondria</button>
+          <button type="button" class="example-btn" data-example="cpu">What is a CPU?</button>
+          <button type="button" class="example-btn" data-example="photosynthesis">Photosynthesis</button>
+        </div>
+      </div>
+      <div class="actions">
+        <button type="button" id="generateBtn" class="primary">Generate video</button>
+      </div>
+    </section>
+
+    <section class="card progress-card hidden" id="progressCard">
+      <h2>2. Generating…</h2>
+      <div class="progress-wrap">
+        <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+        <div class="progress-meta">
+          <span id="progressPct">0%</span>
+          <span id="progressStep" class="step">queued</span>
+        </div>
+      </div>
+      <ol class="steps" id="stepsList">
+        <li data-step="tts"><span class="bullet">·</span>Generating voiceover</li>
+        <li data-step="planning"><span class="bullet">·</span>Planning scenes with AI</li>
+        <li data-step="assets"><span class="bullet">·</span>Fetching images</li>
+        <li data-step="rendering"><span class="bullet">·</span>Rendering frames</li>
+        <li data-step="muxing"><span class="bullet">·</span>Muxing audio</li>
+      </ol>
+      <p class="error hidden" id="errorMsg"></p>
+    </section>
+
+    <section class="card result-card hidden" id="resultCard">
+      <h2>3. Your video is ready</h2>
+      <video id="resultVideo" controls preload="metadata"></video>
+      <div class="result-actions">
+        <a id="downloadLink" class="primary" download>Download MP4</a>
+        <button type="button" id="newJobBtn" class="ghost">Make another</button>
+      </div>
+      <p class="meta" id="resultMeta"></p>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <span>Powered by Gemini · Unsplash · Pexels · FFmpeg</span>
+  </footer>
+
+  <script src="/app.js"></script>
+</body>
+</html>
