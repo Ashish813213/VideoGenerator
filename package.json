@@ -1,0 +1,28 @@
+{
+  "name": "videogen",
+  "version": "1.0.0",
+  "description": "Simple web-based script-to-video generator (no auth)",
+  "main": "server/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.24.0",
+    "axios": "^1.7.7",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.1",
+    "ffmpeg-static": "^5.2.0",
+    "fluent-ffmpeg": "^2.1.3",
+    "lucide-static": "^0.460.0",
+    "morgan": "^1.10.0",
+    "nanoid": "^5.0.7",
+    "nodemon": "^3.1.14",
+    "sharp": "^0.33.5"
+  }
+}
