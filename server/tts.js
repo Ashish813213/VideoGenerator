@@ -7,6 +7,11 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { config } from './config.js';
 
 const genAI = new GoogleGenerativeAI(config.geminiApiKey);
+const RETRYABLE_TTS_STATUSES = new Set([429, 500, 502, 503, 504]);
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 function wordCount(text) {
   return text.trim().split(/\s+/).filter(Boolean).length;
@@ -14,7 +19,7 @@ function wordCount(text) {
 
 function toMs(t) {
   if (t == null) return 0;
-  if (typeof t === 'number') return t < 1000 ? Math.round(t * 1000) : Math.round(t);
+  if (typeof t === 'number') return Math.round(t);
   if (typeof t === 'string') {
     if (t.endsWith('s')) return Math.round(parseFloat(t) * 1000);
     return Math.round(parseFloat(t));
@@ -45,6 +50,41 @@ function looksSentenceLevel(timestamps, script) {
   return timestamps.length < wordCount(script) * 0.8;
 }
 
+function parsePcmFormat(mime = '') {
+  const rateMatch = mime.match(/rate=(\d+)/i);
+  const channelsMatch = mime.match(/channels=(\d+)/i);
+  return {
+    sampleRate: rateMatch ? parseInt(rateMatch[1], 10) : 24000,
+    channels: channelsMatch ? parseInt(channelsMatch[1], 10) : 1,
+    bitsPerSample: 16,
+  };
+}
+
+export function pcmToWavBuffer(pcmBytes, options = {}) {
+  const sampleRate = options.sampleRate || 24000;
+  const channels = options.channels || 1;
+  const bitsPerSample = options.bitsPerSample || 16;
+  const blockAlign = channels * (bitsPerSample / 8);
+  const byteRate = sampleRate * blockAlign;
+  const header = Buffer.alloc(44);
+
+  header.write('RIFF', 0);
+  header.writeUInt32LE(36 + pcmBytes.length, 4);
+  header.write('WAVE', 8);
+  header.write('fmt ', 12);
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20);
+  header.writeUInt16LE(channels, 22);
+  header.writeUInt32LE(sampleRate, 24);
+  header.writeUInt32LE(byteRate, 28);
+  header.writeUInt16LE(blockAlign, 32);
+  header.writeUInt16LE(bitsPerSample, 34);
+  header.write('data', 36);
+  header.writeUInt32LE(pcmBytes.length, 40);
+
+  return Buffer.concat([header, pcmBytes]);
+}
+
 export async function synthesizeSpeech(script, outPath) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${config.gemini.ttsModel}:generateContent`;
 
@@ -60,21 +100,32 @@ export async function synthesizeSpeech(script, outPath) {
     },
   };
 
-  let resp;
-  try {
-    resp = await axios.post(`${url}?key=${config.geminiApiKey}`, body, {
-      headers: { 'Content-Type': 'application/json' },
-      timeout: 60_000,
-      responseType: 'json',
-      validateStatus: () => true,
-    });
-  } catch (err) {
-    throw new Error(`TTS request failed: ${err.message}`);
-  }
+  let resp = null;
+  let lastError = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      resp = await axios.post(`${url}?key=${config.geminiApiKey}`, body, {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 60_000,
+        responseType: 'json',
+        validateStatus: () => true,
+      });
+      if (resp.status < 400) break;
 
-  if (resp.status >= 400) {
-    const errBody = resp.data?.error?.message || JSON.stringify(resp.data);
-    throw new Error(`TTS ${resp.status}: ${errBody}`);
+      const errBody = resp.data?.error?.message || JSON.stringify(resp.data);
+      lastError = new Error(`TTS ${resp.status}: ${errBody}`);
+      if (!RETRYABLE_TTS_STATUSES.has(resp.status) || attempt === 3) throw lastError;
+    } catch (err) {
+      lastError = err;
+      const status = err.response?.status;
+      const retryable = status == null || RETRYABLE_TTS_STATUSES.has(status);
+      if (!retryable || attempt === 3) {
+        throw new Error(`TTS request failed after ${attempt} attempt(s): ${err.message}`);
+      }
+    }
+    const delayMs = attempt * 1500;
+    console.warn(`[tts] synthesis attempt ${attempt} failed; retrying in ${delayMs}ms`);
+    await sleep(delayMs);
   }
 
   const parts = resp.data?.candidates?.[0]?.content?.parts || [];
@@ -86,14 +137,22 @@ export async function synthesizeSpeech(script, outPath) {
 
   const mime = audioPart.inlineData.mimeType;
   const audioBytes = Buffer.from(audioPart.inlineData.data, 'base64');
-  const ext = mime.includes('wav') ? 'wav' : mime.includes('mpeg') ? 'mp3' : 'mp3';
+  const isRawPcm = /audio\/(l16|pcm)|codec=pcm/i.test(mime);
+  const ext = isRawPcm || /wav/i.test(mime) ? 'wav' : /mpeg|mp3/i.test(mime) ? 'mp3' : 'bin';
   const finalPath = outPath.replace(/\.[^.]+$/, '') + '.' + ext;
-  await fs.writeFile(finalPath, audioBytes);
+  const outputBytes = isRawPcm
+    ? pcmToWavBuffer(audioBytes, parsePcmFormat(mime))
+    : audioBytes;
+  await fs.writeFile(finalPath, outputBytes);
 
-  return { audioPath: finalPath, mime };
+  return {
+    audioPath: finalPath,
+    mime: isRawPcm ? 'audio/wav' : mime,
+    sourceMime: mime,
+  };
 }
 
-export async function transcribeForTimestamps(audioPath, script) {
+export async function transcribeForTimestamps(audioPath, script, mimeType = 'audio/wav') {
   const audioBytes = await fs.readFile(audioPath);
   const model = genAI.getGenerativeModel({
     model: 'gemini-2.5-flash',
@@ -106,7 +165,7 @@ Return timestamps in milliseconds. Use the script to disambiguate words if neede
 
   const result = await model.generateContent([
     { text: prompt },
-    { inlineData: { mimeType: 'audio/mpeg', data: audioBytes.toString('base64') } },
+    { inlineData: { mimeType, data: audioBytes.toString('base64') } },
   ]);
   const text = result.response.text();
   const cleaned = text.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
@@ -120,13 +179,26 @@ Return timestamps in milliseconds. Use the script to disambiguate words if neede
 }
 
 export async function getProbeDuration(audioPath) {
-  const ffprobe = (await import('fluent-ffmpeg')).default;
   return new Promise((resolve, reject) => {
-    ffprobe.ffprobe(audioPath, (err, data) => {
-      if (err) return reject(err);
-      const s = data?.format?.duration || 0;
-      resolve(Math.round(s * 1000));
+    const p = spawn(ffmpegPath, ['-hide_banner', '-i', audioPath], { stdio: ['ignore', 'ignore', 'pipe'] });
+    let stderr = '';
+    p.stderr.on('data', d => { stderr += d.toString(); });
+    p.on('close', () => {
+      if (/header missing|invalid data found|could not find codec parameters/i.test(stderr)) {
+        reject(new Error('audio file is not a valid, probeable media container'));
+        return;
+      }
+      const m = stderr.match(/Duration:\s*(\d+):(\d+):(\d+\.\d+)/);
+      if (m) {
+        const h = parseInt(m[1], 10);
+        const mn = parseInt(m[2], 10);
+        const s = parseFloat(m[3]);
+        resolve(Math.round((h * 3600 + mn * 60 + s) * 1000));
+      } else {
+        reject(new Error('could not parse duration from ffmpeg output'));
+      }
     });
+    p.on('error', err => reject(err));
   });
 }
 
@@ -148,15 +220,29 @@ function buildEstimatedTimestamps(script, durationMs) {
   const words = script.trim().split(/\s+/).filter(Boolean);
   if (!words.length) return [];
   const totalSpan = Math.max(durationMs, words.length * 50);
-  const perWord = totalSpan / words.length;
+  const weights = words.map(w => 0.5 + Math.min(w.length, 16) / 8);
+  const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
   const out = [];
   let cursor = 0;
-  for (const w of words) {
-    const dur = Math.max(80, Math.round(perWord * (0.5 + w.length / 8)));
-    out.push({ word: w, start_ms: cursor, end_ms: cursor + dur });
-    cursor += dur;
+  for (let i = 0; i < words.length; i++) {
+    const end = i === words.length - 1
+      ? totalSpan
+      : Math.round(cursor + (totalSpan * weights[i]) / totalWeight);
+    out.push({ word: words[i], start_ms: cursor, end_ms: end });
+    cursor = end;
   }
   return out;
+}
+
+function timestampsFitDuration(timestamps, durationMs) {
+  if (!timestamps.length) return false;
+  let previousEnd = 0;
+  for (const timestamp of timestamps) {
+    if (timestamp.start_ms < previousEnd || timestamp.end_ms < timestamp.start_ms) return false;
+    if (timestamp.end_ms > durationMs + 1000) return false;
+    previousEnd = timestamp.end_ms;
+  }
+  return true;
 }
 
 export async function generateSpeechAndTimestamps({ script, jobDir }) {
@@ -178,12 +264,12 @@ export async function generateSpeechAndTimestamps({ script, jobDir }) {
 
   let timestamps = [];
   try {
-    timestamps = await transcribeForTimestamps(audioPath, script);
+    timestamps = await transcribeForTimestamps(audioPath, script, result.mime);
   } catch (err) {
     console.warn('[tts] STT fallback failed:', err.message);
   }
 
-  if (looksSentenceLevel(timestamps, script)) {
+  if (looksSentenceLevel(timestamps, script) || !timestampsFitDuration(timestamps, durationMs)) {
     timestamps = buildEstimatedTimestamps(script, durationMs);
   }
 
@@ -191,5 +277,5 @@ export async function generateSpeechAndTimestamps({ script, jobDir }) {
     timestamps[timestamps.length - 1].end_ms = durationMs;
   }
 
-  return { audioPath, durationMs, timestamps, skipped: false };
+  return { audioPath, durationMs, timestamps, skipped: false, source: 'gemini' };
 }

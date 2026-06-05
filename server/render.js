@@ -5,6 +5,7 @@ import ffmpegPath from 'ffmpeg-static';
 import ffmpeg from 'fluent-ffmpeg';
 import { config } from './config.js';
 import { renderSceneType } from './scenes/index.js';
+import { paletteFor, detectTopic, TOPIC_PALETTES } from './design.js';
 
 if (ffmpegPath) ffmpeg.setFfmpegPath(ffmpegPath);
 
@@ -14,8 +15,13 @@ function runFfmpeg({ inputs, filterGraph, output, durationSec }) {
     for (const inp of inputs) {
       cmd = cmd.input(inp.path).inputOptions([`-loop 1`]);
     }
+    const outputLabel = filterGraph.match(/\[([^\]]+)\]\s*$/)?.[1];
+    if (!outputLabel) {
+      reject(new Error('render graph has no final output label'));
+      return;
+    }
     cmd
-      .complexFilter(filterGraph)
+      .complexFilter(filterGraph, outputLabel)
       .outputOptions([
         '-c:v libx264',
         '-preset veryfast',
@@ -28,21 +34,28 @@ function runFfmpeg({ inputs, filterGraph, output, durationSec }) {
       ])
       .output(output)
       .on('end', () => resolve(output))
-      .on('error', (err) => reject(err))
+      .on('error', (err, stdout, stderr) => {
+        err.ffmpegStderr = stderr;
+        reject(err);
+      })
       .run();
   });
 }
 
-export async function renderScene({ scene, asset, jobDir, sceneIndex }) {
+export async function renderScene({ scene, asset, jobDir, sceneIndex, script }) {
   const durationMs = Math.max(500, scene.end_ms - scene.start_ms);
   const durationSec = durationMs / 1000;
   const out = path.join(jobDir, `scene_${String(sceneIndex).padStart(3, '0')}.mp4`);
+
+  const topic = detectTopic(script || '');
+  const palette = paletteFor(topic);
 
   const ctx = {
     durSec: durationSec,
     iconPath: asset?.iconPath || null,
     iconPaths: asset?.iconPaths || {},
     imagePath: asset?.imagePath || null,
+    palette,
   };
 
   let graph;
@@ -64,7 +77,8 @@ export async function renderScene({ scene, asset, jobDir, sceneIndex }) {
     return out;
   } catch (err) {
     console.warn(`[render] filter graph failed for scene ${sceneIndex} (${scene.scene_type}):`, err.message);
-    console.warn(`[render] filter was: ${graph.filterGraph.slice(0, 400)}...`);
+    if (err.ffmpegStderr) console.warn(`[render] ffmpeg stderr:\n${err.ffmpegStderr}`);
+    console.warn(`[render] filter graph (${graph.filterGraph.length} chars): ${graph.filterGraph}`);
     const fallback = buildFallbackGraph(scene, ctx, durationSec);
     try {
       await runFfmpeg({
@@ -114,7 +128,7 @@ function buildFallbackGraph(scene, ctx, durSec) {
   if (fontExpr) textOpts.push(`fontfile='${fontExpr}'`);
   textOpts.push(`x=(w-text_w)/2:y=(h-text_h)/2+200`);
   parts.push(`[t1]drawtext=${textOpts.join(':')}[t2]`);
-  parts.push(`[t2]fade=t=in:st=0:d=0.4:alpha=1`);
+  parts.push(`[t2]fade=t=in:st=0:d=0.4:alpha=1[out]`);
   return { inputs, filterGraph: parts.join(';') };
 }
 

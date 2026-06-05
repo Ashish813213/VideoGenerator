@@ -20,7 +20,7 @@ app.use(morgan('tiny'));
 app.use(express.static(PUBLIC_DIR));
 
 app.get('/api/health', (_req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.json({ status: 'ok', skipTts: config.limits.skipTts, timestamp: new Date().toISOString() });
 });
 
 app.post('/api/generate', async (req, res) => {
@@ -34,6 +34,7 @@ app.post('/api/generate', async (req, res) => {
       jobId: job.id,
       status: job.status,
       progress: job.progress,
+      tts_source: job.tts_source,
     });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -49,6 +50,7 @@ app.get('/api/jobs/:id', (req, res) => {
     progress: job.progress,
     current_step: job.current_step,
     duration_ms: job.duration_ms,
+    tts_source: job.tts_source,
     error_msg: job.error_msg,
     output_url: job.status === 'done' ? `/api/video/${job.id}` : null,
     created_at: job.created_at,

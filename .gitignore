@@ -12,7 +12,8 @@ frames/
 assets/
 !assets/.gitkeep
 
-DOCS/
+  Session   Reformat PRD, SystemDesign, and TDD docs
+  Continue  opencode -s ses_16cc945adffelBU7hoGJoCkLzB
 *.docx
 
 *.log

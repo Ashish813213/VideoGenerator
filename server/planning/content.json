@@ -1,0 +1,107 @@
+{
+  "source": "gemini",
+  "topic": "Mitochondria",
+  "subtopic": "The cell's energy powerhouses and their surprising origins",
+  "audience": "general public",
+  "tone": "educational awe",
+  "narrative_arc": "hook → definition → process → scale → surprise → consequence → summary",
+  "concepts": [
+    {
+      "term": "Mitochondria",
+      "definition": "Organelles converting glucose and oxygen into ATP for cellular energy.",
+      "importance": "foundational"
+    },
+    {
+      "term": "ATP",
+      "definition": "The energy currency fueling nearly every cellular process in the body.",
+      "importance": "foundational"
+    },
+    {
+      "term": "Endosymbiotic Theory",
+      "definition": "Mitochondria were once free-living bacteria, now permanent cell residents.",
+      "importance": "surprising"
+    },
+    {
+      "term": "Mitochondrial Failure",
+      "definition": "Dysfunction leads to severe health issues like muscle weakness and neurodegeneration.",
+      "importance": "memorable"
+    }
+  ],
+  "story_beats": [
+    {
+      "index": 0,
+      "start_ms": 0,
+      "end_ms": 6000,
+      "intent": "Introduce the cell's power source",
+      "beat_role": "hook",
+      "speaker_cue": "Mitochondria are often called the powerhouses of the cell."
+    },
+    {
+      "index": 1,
+      "start_ms": 6000,
+      "end_ms": 12000,
+      "intent": "Define their energy conversion function",
+      "beat_role": "definition",
+      "speaker_cue": "They convert glucose and oxygen into ATP, the energy currency that fuels nearly every cellular process."
+    },
+    {
+      "index": 2,
+      "start_ms": 12000,
+      "end_ms": 18000,
+      "intent": "Illustrate the continuous energy production",
+      "beat_role": "process",
+      "speaker_cue": "The glucose and oxygen you absorbed ten seconds ago are already being processed."
+    },
+    {
+      "index": 3,
+      "start_ms": 18000,
+      "end_ms": 25000,
+      "intent": "Quantify the immense scale of energy output",
+      "beat_role": "scale",
+      "speaker_cue": "Every minute, your body produces roughly 9 × 10^20 ATP molecules..."
+    },
+    {
+      "index": 4,
+      "start_ms": 25000,
+      "end_ms": 31000,
+      "intent": "Reveal their ancient bacterial origin",
+      "beat_role": "surprise",
+      "speaker_cue": "Each mitochondrion has its own DNA, hinting they were once free-living bacteria."
+    },
+    {
+      "index": 5,
+      "start_ms": 31000,
+      "end_ms": 38000,
+      "intent": "Warn of the severe impact of their failure",
+      "beat_role": "consequence",
+      "speaker_cue": "When mitochondria fail, the consequences are catastrophic: muscle weakness, neurodegeneration, even death."
+    },
+    {
+      "index": 6,
+      "start_ms": 38000,
+      "end_ms": 48000,
+      "intent": "Conclude with their fundamental importance",
+      "beat_role": "summary",
+      "speaker_cue": "Understanding them is understanding life itself."
+    }
+  ],
+  "key_takeaways": [
+    "Mitochondria are the essential powerhouses, converting fuel into energy for all life.",
+    "Your body produces an astonishing 9 × 10^20 ATP molecules every minute.",
+    "These vital organelles have a surprising past as ancient, free-living bacteria."
+  ],
+  "palette": {
+    "primary": "#8B5CF6",
+    "secondary": "#3B82F6",
+    "tertiary": "#EC4899",
+    "accent4": "#A855F7",
+    "accent5": "#06B6D4",
+    "glow": "#8B5CF6",
+    "gradient": [
+      "#4C1D95",
+      "#8B5CF6",
+      "#A855F7"
+    ]
+  },
+  "detected_topic": "science"
+}

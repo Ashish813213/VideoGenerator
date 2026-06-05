@@ -1,148 +1,304 @@
-# VideoGen — Project Context
+# VideoGen Project Context
 
-## Goal
-- Build a no-auth web app that turns a text script into a narrated video with premium motion-graphics (Apple / Kurzgesagt / Veritasium style) using Gemini + Lucide icons + FFmpeg.
-- Architecture defined in `docs/PRD.md`, `docs/SystemDesign.md`, `docs/TDD.md`.
+Last verified: June 5, 2026
 
-## Constraints & Preferences
-- No login/signup, no auth — paste script → get MP4.
-- "Simple" — skip Remotion/Chromium, use FFmpeg-only rendering.
-- Icons: **Lucide first**, Pexels, then Unsplash.
-- Lucide icons (PascalCase) drawn via `lucide-static` + `sharp` SVG→PNG, cached in `assets/icons/`.
-- Windows env, Node 20+, `ffmpeg-static` for binary.
-- API keys in `.env` (gitignored). User shared keys in chat — **must rotate after**.
+## Product Goal
 
-## Architecture (as built)
+VideoGen is a local, no-auth web app that converts a text script into a narrated
+1920x1080 MP4. It uses Gemini for narration and planning, Lucide/stock assets for
+visuals, and FFmpeg for scene rendering, concatenation, and audio muxing.
 
-```
-public/                       # static frontend — no build step
-  index.html, style.css, app.js   # 3-step UI, dark/light auto
+Primary flow:
+
+1. User submits a script in the vanilla web UI.
+2. Gemini TTS creates narration and Gemini Flash derives word timestamps.
+3. A three-stage planner creates content beats, visual direction, and scene specs.
+4. Assets are resolved from Lucide first, then Pexels and Unsplash where relevant.
+5. FFmpeg renders each scene, concatenates clips, and muxes narration.
+6. The browser polls job status and exposes the final MP4.
+
+## Current Architecture
+
+```text
+public/
+  index.html                  UI shell
+  style.css                   responsive styling
+  app.js                      submit, poll, result playback/download
 
 server/
-  index.js                    # Express, 5 routes, graceful shutdown
-  config.js                   # env loader + FONT_PATH colon-safe copy
-  design.js                   # design system: colors, palette, 8 scene types
-  tts.js                      # generateSpeechAndTimestamps (real + silent-skip)
-  planner.js                  # Gemini → scene plan, 8 scene types, validator
-  lucide.js                   # 1737-icon library, normalizeLucideName, pickIconForQuery
-  assets.js                   # resolveSceneVisual (Lucide → Pexels → Unsplash)
-  render.js                   # renderScene dispatch + concat + mux
-  pipeline.js                 # job state machine, queue, debug log
+  index.js                    Express routes and graceful shutdown
+  config.js                   environment, paths, limits, feature flags
+  pipeline.js                 in-memory jobs, queue, pipeline state machine
+  tts.js                      Gemini TTS, WAV packaging, STT, timing fallback
+  planner.js                  orchestration entry point and scene validation
+  assets.js                   Lucide rendering and stock image cache
+  lucide.js                   icon lookup and normalization
+  design.js                   palettes, typography, topic detection
+  render.js                   scene render, fallback, concat, audio mux
+  planning/
+    understand.js             script -> content beats
+    direct.js                 beats -> visual direction/storyboard
+    scene.js                  storyboard -> renderable scene specs
+    orchestrate.js            runs the three planning stages
   scenes/
-    base.js                   # FilterBuilder: bg, text, glow, icon, line, etc.
-    index.js                  # 8 scene-type renderers (hero/definition/callout/stat/process/timeline/comparison/summary)
+    base.js                   FFmpeg FilterBuilder primitives
+    index.js                  scene-type renderers
 
-jobs/{id}/                    # per-job audio.mp3, scene_NNN.mp4, video.mp4
-output/{id}.mp4               # final muxed MP4
-
-assets/
-  icons/                      # cached Lucide PNGs (md5(name)_color_size.png)
-  images/                     # cached Pexels/Unsplash JPGs
-  fonts/                      # Space Grotesk, Inter, Bebas Neue (TTF)
-
-node_modules/.cache/          # safe font copy (no colon in path)
+jobs/{jobId}/                 audio, plans, scene clips, video-only MP4
+output/{jobId}.mp4            final muxed video
+assets/icons/                 generated Lucide PNG cache
+assets/images/                stock image cache
+assets/fonts/                 bundled display/body fonts
 ```
 
-## Design System (V3)
+The server exposes:
 
-### 8 Scene Types
-1. **hero** — opening title + subtitle, big accent text + pulse icon
-2. **definition** — keyword + 1-line definition
-3. **callout** — accent-colored card with glow + icon + insight
-4. **stat** — huge animated counter (0 → final) with Bebas Neue, label below
-5. **process** — 2–4 step cards with icons, arrows, sequential reveal
-6. **timeline** — horizontal line with dot markers + year + label
-7. **comparison** — left/right cards with colored borders
-8. **summary** — 3 takeaway cards with numbered headers
+- `GET /api/health`
+- `POST /api/generate` with `{ "script": "..." }`
+- `GET /api/jobs`
+- `GET /api/jobs/:id`
+- `GET /api/video/:id`
+- `GET /api/video/:id/download`
 
-### Color Palette
-- `bgDark: #0A0A0A`, `bgLight: #FAFAFA`
-- Tech: `blue #3B82F6` + `cyan #06B6D4`
-- Finance: `emerald #10B981` + `green #22C55E`
-- Science: `purple #8B5CF6` + `blue`
-- Warning: `red #EF4444` + `orange #F97316`
-- Energy: `orange #F97316` + `yellow #FACC15`
-- Topic auto-detected from script via keyword scoring in `design.js#detectTopic`.
+## Runtime Configuration
 
-### Animations
-- Text: word-by-word, kineticTypography, scalePop, fadeUp, glow text (2 drawtext layers)
-- Icon: scaleIn (0.4s), pulse (sin-based), rotate, popIn
-- Counter: `eif::expr:d` for 0→value
-- Cards: gradient backgrounds, multi-layer drawbox with @alpha
+Important `.env` variables:
 
-### Typography
-- Display: **Space Grotesk Bold**
-- Body: **Inter Regular/Bold**
-- Stat: **Bebas Neue Regular**
-- All in `assets/fonts/`, paths auto-resolved by `design.js#FONTS`.
+- `GEMINI_API_KEY`
+- `UNSPLASH_ACCESS_KEY`
+- `PEXELS_API_KEY`
+- `PORT`
+- `JOBS_DIR`, `OUTPUT_DIR`, `ASSETS_DIR`
+- `FONT_PATH`
+- `MAX_SCRIPT_CHARS`
+- `MAX_CONCURRENT_JOBS`
+- `SKIP_TTS`
+- `WORDS_PER_MINUTE`
+- `ENABLE_ADVANCED_LAYOUTS`
+- `ENABLE_TEXT_ANIMATIONS`
+- `ENABLE_CONNECTORS`
 
-## Recent Bugs & Fixes
-1. **Font path colon escape failing** — `C:/Windows/Fonts/arial.ttf` colon was breaking FFmpeg's filter parser. **Fix:** `config.js` copies font to `node_modules/.cache/videogen-font.ttf` at startup; render no longer escapes colons.
-2. **Invisible black-on-black** — `text_color` defaulted to black, `bg_color` was black. **Fix:** `planner.js` validator now auto-derives `text_color` from `bg_color`.
-3. **drawtext with redundant box** — removed no-op `box=1:boxcolor=@0.0:boxborderw=20`.
-4. **Pipeline debug log read `s.text`** instead of `s.display_text` — fixed.
-5. **FilterBuilder input index bug** — was using label-counter for input index, causing wrong `[N:v]` references. **Fix:** separate `inputIdx` counter in `FilterBuilder.pushInput()`.
-6. **Server doesn't release port on kill** — `index.js` now has `SIGINT/SIGTERM` handlers that `server.close()` and exit cleanly, plus `EADDRINUSE` startup error.
-7. **Hero scene syntax error** — `x = '(W-360)/2'` (assignment) → `x: '(W-360)/2'` (object key).
+Current verified TTS configuration:
 
-## Current Status
-- Server runs on `http://localhost:3000` with graceful shutdown.
-- 15 commits pushed to https://github.com/Ashish813213/VideoGenerator (force-pushed to replace old single-commit main).
-- New V3 design system built (8 scene types, 7 fonts, gradients, counters, glow).
-- **Just restarted server with V3** but end-to-end test of new renderers NOT YET RUN — first attempt to render likely has filter-graph issues that need debugging.
-- `SKIP_TTS=true` mode still used: silent audio via `anullsrc`, estimated timestamps from word count.
+- `SKIP_TTS=false`
+- model: `gemini-2.5-flash-preview-tts`
+- voice: `Kore`
+- Gemini returns raw `audio/L16;codec=pcm;rate=24000`
 
-## Blocked
-- Real TTS unavailable: Gemini TTS rejects `en-US-Standard-C`. Valid voices: `Kore, Puck, Zephyr, Aoede, Leda, Orus, Perseus` (any of 30+ listed in error).
-- Until TTS is restored, no narration — silent video only.
+Never commit `.env` or copy API key values into documentation/logs. Keys previously
+shared outside the environment file should be rotated.
 
-## Next Steps
-1. **Debug V3 renderer** — run end-to-end test (`Invoke-RestMethod POST /api/generate`), inspect server.log for filter-graph errors, extract a frame to verify colored motion graphics.
-2. **Fix any filter-graph issues** that surface in first V3 render — likely candidates: counter expression syntax, complex chained drawtext with `enable`, drawbox overlay ordering.
-3. **Re-enable TTS** by changing `ttsVoice` in `server/config.js` to a valid voice (e.g., `Kore` or `Zephyr`) and setting `SKIP_TTS=false`.
-4. **Rotate all API keys** shared in chat (Gemini, Pexels, Unsplash).
+## TTS Root Cause and Fix
 
-## Key API / Config
-- `POST /api/generate` `{script}` → `{jobId, status:"processing"}`
-- `GET /api/jobs/:id` → `{status, progress, current_step, error_msg, output_url, duration_ms}`
-- `GET /api/video/:id` → streams MP4 (HTTP range)
-- `GET /api/video/:id/download` → attachment download
-- `GET /api/health` → status + skipTts flag
-- `.env`: `GEMINI_API_KEY`, `UNSPLASH_ACCESS_KEY`, `PEXELS_API_KEY`, `FONT_PATH`, `SKIP_TTS`, `WORDS_PER_MINUTE`, `PORT`, `MAX_CONCURRENT_JOBS`
+### Root cause
 
-## Environment Notes
-- `.env` current key: `GEMINI_API_KEY=<REDACTED — see .env, do NOT commit>` (Cloudflare-prefixed; works for `gemini-flash-latest` text). Real Gemini keys are `AIzaSy...` — this one is anomalous. **Rotate.**
-- FFmpeg filter graph uses label-based chaining (`[bg]` → `[t1]` → `[t2]` …).
-- Concat demuxer needs absolute paths in list file.
-- API keys were caught by GitHub secret scanning in first push attempt — context.md redacts the key value going forward.
+Gemini TTS returns raw signed 16-bit, 24 kHz, mono PCM. The old implementation
+wrote those bytes directly to `audio.mp3`. FFmpeg then guessed that the file was
+MP3, emitted repeated `Header missing` errors, and estimated a false duration.
 
-## File Map
-- `D:\Mr.Ashish\VideoGen\package.json` — deps + scripts (`start`, `dev`).
-- `D:\Mr.Ashish\VideoGen\.env` — keys, paths, `SKIP_TTS=true`, `WORDS_PER_MINUTE=150`.
-- `D:\Mr.Ashish\VideoGen\.env.example` — template.
-- `D:\Mr.Ashish\VideoGen\.gitignore` — excludes `node_modules/`, `.env`, `jobs/`, `output/`, `assets/`, `frames/`, `DOCS/`, `*.docx`, `*.log`.
-- `D:\Mr.Ashish\VideoGen\server\index.js` — Express app, 5 routes, static frontend, graceful shutdown.
-- `D:\Mr.Ashish\VideoGen\server\config.js` — env loader, **font colon-copy logic**, plannerModel.
-- `D:\Mr.Ashish\VideoGen\server\design.js` — color palette, 8 scene types, topic detection, font paths.
-- `D:\Mr.Ashish\VideoGen\server\tts.js` — TTS + STT + silent-audio + estimated timestamps.
-- `D:\Mr.Ashish\VideoGen\server\planner.js` — system prompt with 8 scene types, validator, gap-fill.
-- `D:\Mr.Ashish\VideoGen\server\lucide.js` — 1737-icon library, `normalizeLucideName`, `pickIconForQuery`, `getIconSvg`.
-- `D:\Mr.Ashish\VideoGen\server\assets.js` — `resolveSceneVisual`, sharp-rendered Lucide PNGs (cached), Pexels→Unsplash fallback.
-- `D:\Mr.Ashish\VideoGen\server\render.js` — `renderScene` dispatch, `concatScenes`, `muxAudio`, fallback.
-- `D:\Mr.Ashish\VideoGen\server\pipeline.js` — job state machine, queue, debug log.
-- `D:\Mr.Ashish\VideoGen\server\scenes\base.js` — `FilterBuilder` (bg, text, glow, icon, image, line).
-- `D:\Mr.Ashish\VideoGen\server\scenes\index.js` — 8 scene-type renderers.
-- `D:\Mr.Ashish\VideoGen\public\index.html` + `style.css` + `app.js` — frontend.
-- `D:\Mr.Ashish\VideoGen\README.md` — setup + API docs.
-- `D:\Mr.Ashish\VideoGen\docs\PRD.md`, `SystemDesign.md`, `TDD.md` — reference architecture.
-- `D:\Mr.Ashish\VideoGen\jobs\` — runtime per-job files.
-- `D:\Mr.Ashish\VideoGen\output\` — final MP4s.
-- `D:\Mr.Ashish\VideoGen\assets\icons\`, `assets\images\`, `assets\fonts\` — caches.
-- `D:\Mr.Ashish\VideoGen\context.md` — this file.
+Evidence from job `0UbGuT1GIyMV`:
 
-## Commands
-- Start: `node server/index.js` (or via `Start-Process` detached)
-- Stop: `Stop-Process -Name node -Force` (or Ctrl+C if in foreground — graceful shutdown releases the port)
-- Test job: `Invoke-RestMethod -Method Post -Uri http://localhost:3000/api/generate -ContentType application/json -Body (@{script="..."} | ConvertTo-Json)`
-- Frame extract: `node_modules\ffmpeg-static\ffmpeg.exe -y -ss 1 -i <video> -frames:v 1 -update 1 frame.png`
-- Git: 15 commits on `main` at https://github.com/Ashish813213/VideoGenerator
+- Raw payload size: 1,626,766 bytes
+- Old mislabeled MP3 duration: 101.67 seconds
+- Same bytes wrapped correctly as PCM WAV: 33.89 seconds
+- The false duration stretched the final scene from 25.60s to 101.67s
+
+### Implemented fix in `server/tts.js`
+
+- Detect `audio/L16` / PCM responses.
+- Add a valid 44-byte RIFF/WAV header.
+- Save PCM output as `audio.wav`, not `audio.mp3`.
+- Pass `audio/wav` to Gemini transcription.
+- Treat numeric transcript values as milliseconds, as requested in the prompt.
+- Reject timestamps outside the real audio duration.
+- Make estimated word timings proportional and end exactly at audio duration.
+- Reject obviously corrupt containers during duration probing.
+
+### Verification
+
+A live Gemini test returned:
+
+```text
+source MIME: audio/L16;codec=pcm;rate=24000
+saved MIME:  audio/wav
+duration:    3250 ms
+timestamps:  8 words
+```
+
+Google's current TTS documentation also specifies converting the returned PCM as
+`s16le`, 24 kHz, mono before using it as WAV/audio.
+
+The local server was restarted after this fix and reports `skipTts=false`.
+
+TTS synthesis now retries network failures, HTTP 429, and transient 5xx responses
+up to three times with bounded backoff. This was added after an end-to-end request
+received a transient Gemini HTTP 500.
+
+## Renderer Root Cause and Fix
+
+The June 5 output looked basic because all advanced FFmpeg graphs failed and
+`renderScene()` silently emitted fallback clips.
+
+The primary defect was missing output mapping. Every complex graph ended in a
+named label such as `[v43]`, but `fluent-ffmpeg` was not told to map that label.
+The graph rendered correctly as soon as the final label was passed to
+`complexFilter`.
+
+Additional visual defects fixed:
+
+- Full-screen card/glow helper canvases were opaque and covered earlier layers.
+- Direct `drawtext` strings broke on apostrophes.
+- The stat renderer consumed one labeled stream twice.
+- Lucide SVG `currentColor` rendered cached icons black.
+- Icon glow created square artifacts.
+- Neon text borders were large enough to become solid color slabs.
+- Camera zoom expressions scaled by pixels instead of percentages.
+- Right-side layouts still placed text on the left.
+- Summary takeaways were not wrapped and collided across cards.
+- Bright palette gradients were replaced with darker cinematic gradients.
+- Process reveal timing now scales with scene duration.
+
+Verification:
+
+- All six saved scene graphs pass FFmpeg parser/render smoke tests.
+- Hero, process, and summary clips were rendered as real MP4 files.
+- Frames were visually inspected for icon color, typography, composition, and
+  summary readability.
+- V10 director rules now explicitly enforce multi-asset scenes, layout variety,
+  and a new attention event at least every two seconds.
+- A real API job (`TAxMNJBkAjwY`) completed TTS, planning fallback, assets,
+  rendering, concatenation, and muxing. Its WAV is 14.61s and final MP4 is 14.50s.
+
+The local server was restarted after these renderer changes.
+
+## Known Problems
+
+### P0 - Render fallback hides production failures
+
+`renderScene()` catches the advanced-render error, then catches the normal
+fallback error, then emits a black clip. The job can reach `done` even when every
+real scene failed. Jobs need a degraded/failed status or a render-quality error
+when fallback usage crosses a threshold.
+
+### P1 - Existing output contains the old corrupt narration
+
+`output/0UbGuT1GIyMV.mp4` is 91.97 seconds and was muxed from the invalid
+headerless-PCM-as-MP3 file. It should be treated as a failed artifact and
+regenerated after restart.
+
+### P1 - Planning is slow and model retries are opaque
+
+The latest three-stage planning run took about 154.6 seconds.
+`gemini-flash-latest` failed twice during scene planning before
+`gemini-2.5-flash` succeeded. API error details are cut off in `server.log`.
+Record model, status code, retry delay, and stage duration without logging keys.
+
+### P1 - Jobs only exist in memory
+
+The `jobs` map is not restored on restart. Existing MP4 files remain on disk, but
+the API returns `job not found`, so video routes cannot serve them after restart.
+Persist minimal job metadata or reconstruct completed jobs from `output/`.
+
+### P1 - Timestamp precision is approximate
+
+Gemini audio understanding is being used as word-level STT. When it returns too
+few or invalid timestamps, the code estimates timings from word lengths. This is
+acceptable for scene timing but should not be described as guaranteed alignment.
+
+The most recent STT failure is confirmed as quota exhaustion:
+
+```text
+429 Too Many Requests
+generate_content_free_tier_requests
+limit: 20
+model: gemini-2.5-flash
+```
+
+The WAV was valid. STT did not fail because of audio encoding. Until quota resets
+or billing/quota is increased, the timestamp fallback will be used.
+
+### P1 - Gemini planning quota can bypass V10
+
+The same quota pressure can block all planner models. When that happens, V10 is
+not executed and the local heuristic planner is used. The heuristic fallback now
+creates topic-specific icons, structured process/summary data, varied layouts,
+and avoids fake zero-value stat scenes, but it cannot match full Gemini direction.
+
+### P2 - TTS settings are partly hardcoded
+
+The TTS model and voice are hardcoded in `server/config.js`; `ttsRate` exists but
+is unused. Expose model/voice through environment variables and remove or
+implement rate control.
+
+### P2 - No automated tests
+
+There is no test script or test suite. High-value first tests:
+
+- PCM-to-WAV header and duration
+- timestamp unit normalization and duration bounds
+- estimated timestamps end exactly at `durationMs`
+- planner scene timing continuity
+- representative FFmpeg graph smoke test for every scene type
+- pipeline failure/degraded-state behavior
+
+### P2 - Documentation drift and encoding damage
+
+Several docs/log strings contain mojibake such as `â†’` and `ΓÇª`. README and docs
+also describe an older one-stage planner and the old TTS behavior in places.
+Normalize files to UTF-8 and update docs after renderer stabilization.
+
+## Current Worktree Notes
+
+The repository contains substantial uncommitted changes across the frontend,
+planner, renderer, design system, and TTS. These changes predated this context
+update and must not be reverted casually.
+
+Files changed during the TTS and visual-render investigation:
+
+- `server/tts.js`
+- `server/render.js`
+- `server/assets.js`
+- `server/design.js`
+- `server/scenes/base.js`
+- `server/scenes/index.js`
+- `server/planning/direct.js`
+- `context.md`
+
+Runtime logs currently present:
+
+- `server.log`
+- `server.err`
+
+## Recommended Work Order
+
+1. Run a short end-to-end job and verify `jobs/{id}/audio.wav`.
+2. Confirm narration duration and final MP4 duration are close.
+3. Check generated hero/process/summary scenes with real stock assets.
+4. Make fallback/degraded rendering visible in job status.
+5. Persist completed job metadata and refresh the remaining docs.
+
+## Useful Commands
+
+```powershell
+npm start
+```
+
+```powershell
+Invoke-RestMethod -Method Post `
+  -Uri http://localhost:3000/api/generate `
+  -ContentType application/json `
+  -Body (@{ script = "Short verification script." } | ConvertTo-Json)
+```
+
+```powershell
+.\node_modules\ffmpeg-static\ffmpeg.exe -hide_banner -i .\jobs\<jobId>\audio.wav
+```
+
+```powershell
+Get-Content .\server.log -Tail 250
+```
+
+## External Reference
+
+- Gemini TTS speech generation:
+  https://ai.google.dev/gemini-api/docs/speech-generation

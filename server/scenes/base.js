@@ -4,14 +4,14 @@ import { existsSync } from 'node:fs';
 export const W = 1920;
 export const H = 1080;
 export const FPS = 30;
-export const ICON_BOX = 420;
+export const ICON_BOX = 380;
 
-function safeText(s) {
+export function escapeDrawtext(s) {
   if (typeof s !== 'string') return '';
   return s
     .replace(/\\/g, '\\\\')
     .replace(/:/g, '\\:')
-    .replace(/'/g, "\\'")
+    .replace(/'/g, '\u2019')
     .replace(/%/g, '\\%')
     .replace(/\n/g, ' ');
 }
@@ -39,17 +39,167 @@ export class FilterBuilder {
     return this.inputIdx++;
   }
 
-  addBg({ color = '#0A0A0A', gradient = null, dur }) {
+  addGradientBg({ gradient, dur }) {
     const out = this.next();
-    if (gradient && Array.isArray(gradient) && gradient.length >= 2) {
-      const [c0, c1] = gradient.map(hexNoHash);
+    const colors = gradient.map(hexNoHash);
+    let cSpec = '';
+    if (colors.length === 2) {
+      cSpec = `c0=0x${colors[0]}:c1=0x${colors[1]}`;
+    } else if (colors.length === 3) {
+      cSpec = `c0=0x${colors[0]}:c1=0x${colors[1]}:c2=0x${colors[2]}:nb_colors=3`;
+    } else {
+      cSpec = colors.map((c, i) => `c${i}=0x${c}`).join(':') + `:nb_colors=${colors.length}`;
+    }
+    this.clauses.push(`gradients=size=${W}x${H}:${cSpec}:x0=0:y0=0:x1=${W}:y1=${H}:duration=${dur}[${out}]`);
+    return out;
+  }
+
+  addSolidBg({ color = '#020617', dur }) {
+    const out = this.next();
+    this.clauses.push(`color=c=${color}:s=${W}x${H}:r=${FPS}:d=${dur}[${out}]`);
+    return out;
+  }
+
+  addBgVignette(input, out, strength = 0.3) {
+    this.clauses.push(`[${input}]vignette=angle=PI/2:mode=forward[${out}]`);
+    return out;
+  }
+
+  addDot(input, out, { x, y, size = 12, color = '#FFFFFF', alpha = 1, pulse = false, startAt = 0, dur = null, glow = false }) {
+    const fadeIn = pulse ? this.next() : null;
+    const inner = this.next();
+    const a = this.next();
+    const enable = (startAt != null && dur != null) ? `enable='between(t,${startAt},${(startAt + dur).toFixed(2)})'` : '';
+    if (pulse) {
       this.clauses.push(
-        `gradients=size=${W}x${H}:c0=0x${c0}:c1=0x${c1}:x0=0:y0=0:x1=${W}:y1=${H}:nb_colors=2:duration=${dur}[${out}]`
+        `color=c=0x00000000:s=${W}x${H}:d=10,format=rgba[bg${inner}];` +
+        `[bg${inner}]drawbox=x=${x - size}:y=${y - size}:w=${size * 2}:h=${size * 2}:color=${color}@${alpha * 0.4}:t=fill,` +
+        `drawbox=x=${x - size / 2}:y=${y - size / 2}:w=${size}:h=${size}:color=${color}@${alpha}:t=fill,` +
+        `drawbox=x=${x - 4}:y=${y - 4}:w=8:h=8:color=${color}@1:t=fill[v${inner}];` +
+        `[v${inner}]scale='1+0.4*sin(2*PI*t*2)':eval=frame[v${a}]`
       );
     } else {
-      this.clauses.push(`color=c=${color}:s=${W}x${H}:r=${FPS}:d=${dur}[${out}]`);
+      this.clauses.push(
+        `color=c=0x00000000:s=${W}x${H}:d=10,format=rgba[bg${inner}];` +
+        `[bg${inner}]drawbox=x=${x - size / 2}:y=${y - size / 2}:w=${size}:h=${size}:color=${color}@${alpha}:t=fill[v${a}]`
+      );
+    }
+    const final = this.next();
+    this.clauses.push(`[${input}][v${a}]overlay=x=0:y=0${enable ? ':' + enable : ''}[${final}]`);
+    return final;
+  }
+
+  addCircle(input, out, { x, y, r = 60, color = '#FFFFFF', alpha = 0.15, blur = false, float = false, floatDur = 4 }) {
+    const c = hexNoHash(color);
+    const lbl = this.next();
+    let expr = '';
+    if (float) {
+      const dx = Math.round(20);
+      const dy = Math.round(15);
+      expr = `x='${x - r}+${dx}*sin(2*PI*t/${floatDur.toFixed(2)})':y='${y - r}+${dy}*cos(2*PI*t/${floatDur.toFixed(2)})':eval=frame`;
+    } else {
+      expr = `x=${x - r}:y=${y - r}`;
+    }
+    const final = this.next();
+    this.clauses.push(
+      `color=c=0x${c}@${alpha}:s=${r * 2}x${r * 2}:d=10[disc${lbl}];` +
+      `[${input}][disc${lbl}]overlay=${expr}[${final}]`
+    );
+    return final;
+  }
+
+  addBlob(input, out, { x = 0, y = 0, w = 600, h = 600, color = '#FFFFFF', alpha = 0.18, blur = 30, float = true }) {
+    const c = hexNoHash(color);
+    const lbl = this.next();
+    const final = this.next();
+    let expr = `x=${x - w / 2}:y=${y - h / 2}`;
+    if (float) {
+      const dx = Math.round(40);
+      const dy = Math.round(30);
+      expr = `x='${x - w / 2}+${dx}*sin(2*PI*t/7)':y='${y - h / 2}+${dy}*cos(2*PI*t/5)':eval=frame`;
+    }
+    this.clauses.push(
+      `color=c=0x${c}@${alpha}:s=${w}x${h}:d=10,` +
+      `boxblur=${blur}:${blur}[b${lbl}];` +
+      `[${input}][b${lbl}]overlay=${expr}[${final}]`
+    );
+    return final;
+  }
+
+  addImage(input, out, { path: imagePath, x = 0, y = 0, w = 720, h = 720, alpha = 1, blur = 0, float = false, floatDur = 6, scaleIn = false, scaleInDur = 0.4 }) {
+    if (!imagePath || !existsSync(imagePath)) return input;
+    const inputIdx = this.pushInput(imagePath);
+    const inputLabel = `${inputIdx}:v`;
+    const fmt = this.next();
+    const sized = this.next();
+    const prepared = this.next();
+    const final = this.next();
+    this.clauses.push(
+      `[${inputLabel}]format=rgba,scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2:color=0x00000000[${fmt}]`
+    );
+    let scaleExpr = '1';
+    if (scaleIn) {
+      scaleExpr = `if(lt(t\\,${scaleInDur.toFixed(2)})\\,1.12-0.12*t/${scaleInDur.toFixed(2)}\\,1.0)`;
+    }
+    this.clauses.push(`[${fmt}]scale=iw*${scaleExpr}:ih*${scaleExpr}:eval=frame[${sized}]`);
+    if (blur > 0) {
+      this.clauses.push(`[${sized}]boxblur=${blur}:${Math.max(1, Math.round(blur / 4))}[${prepared}]`);
+    } else {
+      this.clauses.push(`[${sized}]copy[${prepared}]`);
+    }
+    const opacified = this.next();
+    if (alpha < 1) {
+      this.clauses.push(`[${prepared}]colorchannelmixer=aa=${alpha}[${opacified}]`);
+    } else {
+      this.clauses.push(`[${prepared}]copy[${opacified}]`);
+    }
+    let posX = x;
+    let posY = y;
+    if (float) {
+      posX = typeof x === 'string' ? x : `${x}+18*sin(2*PI*t/${floatDur.toFixed(2)})`;
+      posY = typeof y === 'string' ? y : `${y}+12*cos(2*PI*t/${floatDur.toFixed(2)})`;
+    }
+    this.clauses.push(`[${input}][${opacified}]overlay=x=${posX}:y=${posY}[${final}]`);
+    return final;
+  }
+
+  addGrid(input, out, { size = 80, color = '#FFFFFF', alpha = 0.05 }) {
+    this.clauses.push(`[${input}]drawgrid=w=${W}/${Math.floor(W / size)}:h=${H}/${Math.floor(H / size)}:t=${size}:c=${color}@${alpha}[${out}]`);
+    return out;
+  }
+
+  addLine(input, out, { x1, y1, x2, y2, color = '#FFFFFF', thickness = 4, alpha = 1, drawDur = 0.8, startAt = 0 }) {
+    const minX = Math.min(x1, x2);
+    const minY = Math.min(y1, y2);
+    const w = Math.abs(x2 - x1);
+    const h = Math.abs(y2 - y1);
+    if (h < 1) {
+      this.clauses.push(
+        `[${input}]drawbox=x=${minX}:y=${minY - thickness / 2}:w=${w}:h=${thickness}:color=${color}@${alpha}:t=fill[${out}]`
+      );
+    } else if (w < 1) {
+      this.clauses.push(
+        `[${input}]drawbox=x=${minX - thickness / 2}:y=${minY}:w=${thickness}:h=${h}:color=${color}@${alpha}:t=fill[${out}]`
+      );
+    } else {
+      this.clauses.push(
+        `[${input}]drawbox=x=${minX}:y=${minY - thickness / 2}:w=${w}:h=${thickness}:color=${color}@${alpha}:t=fill[${out}]`
+      );
     }
     return out;
+  }
+
+  addGlowDot(input, out, { x, y, size = 8, color = '#FFFFFF', pulse = true, startAt = 0 }) {
+    const halo = this.next();
+    this.clauses.push(
+      `color=c=0x00000000:s=${W}x${H}:d=10,format=rgba[hb${halo}];` +
+      `[hb${halo}]drawbox=x=${x - size * 3}:y=${y - size * 3}:w=${size * 6}:h=${size * 6}:color=${color}@0.15:t=fill,` +
+      `drawbox=x=${x - size * 2}:y=${y - size * 2}:w=${size * 4}:h=${size * 4}:color=${color}@0.3:t=fill,` +
+      `drawbox=x=${x - size}:y=${y - size}:w=${size * 2}:h=${size * 2}:color=${color}@0.6:t=fill[v${halo}]`
+    );
+    const final = this.next();
+    this.clauses.push(`[${input}][v${halo}]overlay=x=0:y=0[${final}]`);
+    return final;
   }
 
   addText(input, out, opts) {
@@ -71,7 +221,7 @@ export class FilterBuilder {
 
     const safeFontPath = safeFont(font);
     const parts = [
-      `text='${safeText(text)}'`,
+      `text='${escapeDrawtext(text)}'`,
       `fontcolor=${color}@${alpha}`,
       `fontsize=${size}`,
     ];
@@ -89,19 +239,84 @@ export class FilterBuilder {
     return out;
   }
 
-  addGlowText(input, out, opts) {
-    const glowColor = opts.glowColor || opts.color;
-    const big = Math.round(opts.size * 1.6);
-    const inter1 = this.next();
-    this.addText(input, inter1, {
-      ...opts,
-      color: glowColor,
-      size: big,
-      alpha: 0.35,
-      borderW: Math.round(opts.size * 0.22),
-      borderColor: glowColor,
-    });
-    this.addText(inter1, out, opts);
+  addNeonText(input, out, opts) {
+    const { color = '#FFFFFF', glowColor = null, size = 100, layers = 3 } = opts;
+    const finalColor = glowColor || color;
+    let cur = input;
+    const fontOffsets = [3, 2, 1];
+    const borderSizes = [8, 4, 2];
+    const alphas = [0.10, 0.18, 0.32];
+    for (let i = 0; i < layers; i++) {
+      const inter = this.next();
+      const partOpts = {
+        ...opts,
+        color: finalColor,
+        size: size + fontOffsets[i],
+        alpha: alphas[i],
+        borderW: borderSizes[i],
+        borderColor: finalColor,
+      };
+      cur = this.addText(cur, inter, partOpts);
+    }
+    const main = this.next();
+    cur = this.addText(cur, main, { ...opts, color, size, alpha: 1 });
+    return main;
+  }
+
+  addGradientTextFake(input, out, { text, x, y, font, size, colors, enable = null, startAt = null, endAt = null }) {
+    if (!colors || colors.length < 2) {
+      return this.addText(input, out, { text, x, y, font, size, color: colors?.[0] || '#FFFFFF', enable, startAt, endAt });
+    }
+    const e = enable || (startAt != null && endAt != null ? `between(t,${startAt},${endAt})` : null);
+    let cur = input;
+    for (let i = 0; i < colors.length; i++) {
+      const inter = this.next();
+      cur = this.addText(cur, inter, {
+        text,
+        x,
+        y,
+        font,
+        color: colors[i],
+        size: size - i * 4,
+        alpha: 1 - i * 0.05,
+        startAt,
+        endAt,
+        enable: e,
+      });
+    }
+    const final = this.next();
+    this.clauses.push(`[${cur}]copy[${final}]`);
+    return final;
+  }
+
+  addCard(input, out, { x, y, w, h, color = '#FFFFFF', alpha = 0.08, borderColor = '#FFFFFF', borderAlpha = 0.2, borderW = 2, radius = 0, enable = null, startAt = null, endAt = null }) {
+    const c = hexNoHash(color);
+    const bc = hexNoHash(borderColor);
+    const lbl = this.next();
+    const e = enable || (startAt != null && endAt != null ? `enable='between(t,${startAt},${endAt})'` : '');
+    this.clauses.push(
+      `color=c=0x00000000:s=${W}x${H}:d=10,format=rgba[bg${lbl}];` +
+      `[bg${lbl}]drawbox=x=${x}:y=${y}:w=${w}:h=${h}:color=${color}@${alpha}:t=fill,` +
+      `drawbox=x=${x}:y=${y}:w=${w}:h=${borderW}:color=${borderColor}@${borderAlpha}:t=fill,` +
+      `drawbox=x=${x}:y=${y + h - borderW}:w=${w}:h=${borderW}:color=${borderColor}@${borderAlpha}:t=fill,` +
+      `drawbox=x=${x}:y=${y}:w=${borderW}:h=${h}:color=${borderColor}@${borderAlpha}:t=fill,` +
+      `drawbox=x=${x + w - borderW}:y=${y}:w=${borderW}:h=${h}:color=${borderColor}@${borderAlpha}:t=fill[v${lbl}]`
+    );
+    const final = this.next();
+    this.clauses.push(`[${input}][v${lbl}]overlay=x=0:y=0${e ? ':' + e : ''}[${final}]`);
+    return final;
+  }
+
+  addLightSweep(input, out, { color = '#FFFFFF', alpha = 0.15, dur = 0.8, startAt = 0 }) {
+    const sw = 200;
+    const sweepX = `'(W+${sw})*((t-${startAt})/${dur})-${sw}'`;
+    const lbl = this.next();
+    this.clauses.push(
+      `color=c=${color}:s=${sw}x${H}:d=10,` +
+      `format=yuva420p,geq=lum=255:cb=128:cr=128,drawbox=x=0:y=0:w=${sw / 4}:h=${H}:color=${color}@1:t=fill,` +
+      `boxblur=20:1[sweep${lbl}];` +
+      `[${input}][sweep${lbl}]overlay=x=${sweepX}:y=0:enable='between(t,${startAt},${startAt + dur})'[${out}]`
+    );
     return out;
   }
 
@@ -115,7 +330,9 @@ export class FilterBuilder {
       scaleInDur = 0.35,
       rotate = false,
       pulse = false,
-      finalAlpha = 1,
+      float = false,
+      glow = false,
+      enable = null,
     } = opts;
     if (!iconPath || !existsSync(iconPath)) return input;
     const inputIdx = this.pushInput(iconPath);
@@ -123,7 +340,7 @@ export class FilterBuilder {
     const fmt = this.next();
     const scaled = this.next();
     const rotated = this.next();
-    const pulsed = this.next();
+    const final = this.next();
 
     this.clauses.push(
       `[${inputLabel}]format=rgba,scale=${box}:${box}:force_original_aspect_ratio=decrease,pad=${box}:${box}:(ow-iw)/2:(oh-ih)/2:color=0x00000000[${fmt}]`
@@ -131,7 +348,11 @@ export class FilterBuilder {
 
     let scaleExpr = '1';
     if (scaleIn) {
-      scaleExpr = `if(lt(t\\,${scaleInDur.toFixed(2)})\\,1.4-0.4*t/${scaleInDur.toFixed(2)}\\,1.0)`;
+      scaleExpr = `if(lt(t\\,${scaleInDur.toFixed(2)})\\,1.6-0.6*t/${scaleInDur.toFixed(2)}\\,1.0)`;
+    } else if (pulse) {
+      scaleExpr = `if(lt(sin(2*PI*t*1.2)\\,0)\\,0.92\\,1.08)`;
+    } else if (float) {
+      scaleExpr = `1+0.04*sin(2*PI*t/3)`;
     }
     this.clauses.push(
       `[${fmt}]scale=iw*${scaleExpr}:ih*${scaleExpr}:eval=frame[${scaled}]`
@@ -143,75 +364,45 @@ export class FilterBuilder {
       this.clauses.push(`[${scaled}]copy[${rotated}]`);
     }
 
-    let lastOverlay = rotated;
-    if (pulse) {
-      const p = this.next();
-      this.clauses.push(
-        `[${rotated}]scale='if(lt(sin(2*PI*t)\\,0)\\,0.95\\,1.05)':eval=frame[${p}]`
-      );
-      lastOverlay = p;
+    let posX = x, posY = y;
+    if (float) {
+      posX = typeof x === 'string' ? x : `${x}+20*sin(2*PI*t/3)`;
+      posY = typeof y === 'string' ? y : `${y}+15*cos(2*PI*t/3)`;
     }
 
+    const enabled = enable ? `:enable='${enable}'` : '';
     this.clauses.push(
-      `[${input}][${lastOverlay}]overlay=x=${x}:y=${y}:eval=init[${out}]`
+      `[${input}][${rotated}]overlay=x=${posX}:y=${posY}${enabled}[${final}]`
     );
-    return out;
+    return final;
   }
 
-  addImage(input, out, opts) {
-    const { path: imgPath, x = 0, y = 0, w = W, h = H, zoomIn = false, zoomDur = 4, pan = null, finalAlpha = 1 } = opts;
-    if (!imgPath || !existsSync(imgPath)) return input;
-    const inputIdx = this.pushInput(imgPath);
-    const inputLabel = `${inputIdx}:v`;
-    const scaled = this.next();
+  addCameraZoom(input, out, { from = 1.0, to = 1.06, dur = 4 }) {
     const zoomed = this.next();
+    const expr = `${from}+(${to - from})*min(t/${dur.toFixed(2)}\\,1)`;
     this.clauses.push(
-      `[${inputLabel}]scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},setsar=1[${scaled}]`
+      `[${input}]scale='trunc(iw*(${expr})/2)*2':'trunc(ih*(${expr})/2)*2':eval=frame,` +
+      `crop=${W}:${H}:(iw-${W})/2:(ih-${H})/2[${zoomed}]`
     );
-    if (zoomIn) {
-      const zExpr = `1+0.0008*in*${Math.max(1, Math.round(FPS * zoomDur * 0.5))}`;
-      this.clauses.push(`[${scaled}]zoompan=z='min(${zExpr}\\,1.15)':d=${Math.round(FPS * zoomDur)}:s=${w}x${h}:fps=${FPS}[${zoomed}]`);
-      this.clauses.push(`[${input}][${zoomed}]overlay=x=${x}:y=${y}[${out}]`);
-    } else {
-      this.clauses.push(`[${input}][${scaled}]overlay=x=${x}:y=${y}[${out}]`);
-    }
-    return out;
+    const final = this.next();
+    this.clauses.push(`[${zoomed}]copy[${final}]`);
+    return final;
   }
 
-  addRect(input, out, opts) {
-    const { x = 0, y = 0, w = 100, h = 100, color = '#FFFFFF', alpha = 1, startAt = null, endAt = null, radius = 0 } = opts;
-    this.inps.push({ path: null });
-    const bgIdx = this.inps.length - 1;
-    const rectIdx = this.next();
-    const fmt = this.next();
-    const enable = (startAt != null && endAt != null) ? `,enable='between(t,${startAt},${endAt})'` : '';
+  addRetentionPulse(input, out, { at = 2, color = '#FFFFFF' }) {
+    const lbl = this.next();
     this.clauses.push(
-      `color=c=${color}:s=${w}x${h}:d=10[bg${rectIdx}]`
+      `color=c=0x00000000:s=${W}x${H}:d=10,format=rgba[bg${lbl}];` +
+      `[bg${lbl}]drawbox=x=0:y=0:w=${W}:h=${H}:color=${color}@0:t=fill,` +
+      `drawbox=x=0:y=0:w=${W}:h=${H}:color=${color}@0.15:t=fill:enable='between(t,${at},${(at + 0.15).toFixed(2)})'[v${lbl}]`
     );
-    this.clauses.push(
-      `[${input}][bg${rectIdx}]overlay=x=${x}:y=${y}${enable}[${out}]`
-    );
-    return out;
+    const final = this.next();
+    this.clauses.push(`[${input}][v${lbl}]overlay=x=0:y=0[${final}]`);
+    return final;
   }
 
-  addLine(input, out, opts) {
-    const { x1 = 0, y1 = 0, x2 = 100, y2 = 0, color = '#FFFFFF', thickness = 4, startAt = null, endAt = null, drawDur = 0.8 } = opts;
-    const dur = drawDur;
-    const enable = (startAt != null && endAt != null) ? `,enable='between(t,${startAt},${endAt})'` : '';
-    this.clauses.push(
-      `[${input}]drawbox=x=${Math.min(x1,x2)}:y=${Math.min(y1,y2)}:w=${Math.abs(x2-x1)}:h=${thickness}:color=${color}:t=fill${enable}[${out}]`
-    );
-    return out;
-  }
-
-  fade(input, out, { in: fadeIn = null, out: fadeOut = null, type = 'in' } = {}) {
-    if (fadeIn != null) {
-      this.clauses.push(`[${input}]fade=t=in:st=${fadeIn.start || 0}:d=${fadeIn.dur || 0.4}:alpha=1[${out}]`);
-    } else if (fadeOut != null) {
-      this.clauses.push(`[${input}]fade=t=out:st=${fadeOut.start || 0}:d=${fadeOut.dur || 0.4}:alpha=1[${out}]`);
-    } else {
-      this.clauses.push(`[${input}]copy[${out}]`);
-    }
+  fadeOut(input, out, { start = 0, dur = 0.3 }) {
+    this.clauses.push(`[${input}]fade=t=out:st=${start}:d=${dur}:alpha=1[${out}]`);
     return out;
   }
 
@@ -224,13 +415,31 @@ export class FilterBuilder {
   }
 }
 
-export function safeFontPath(p) {
-  return safeFont(p);
-}
-
 export function splitWords(text) {
   if (!text) return [];
   return String(text).split(/\s+/).filter(Boolean);
+}
+
+export function wrapWords(text, maxChars = 24, maxLines = 4) {
+  const words = splitWords(text);
+  const lines = [];
+  let line = '';
+  for (const word of words) {
+    const candidate = line ? `${line} ${word}` : word;
+    if (candidate.length <= maxChars || !line) {
+      line = candidate;
+      continue;
+    }
+    lines.push(line);
+    line = word;
+    if (lines.length === maxLines - 1) break;
+  }
+  if (line && lines.length < maxLines) {
+    const consumed = lines.join(' ').split(/\s+/).filter(Boolean).length;
+    const remaining = words.slice(consumed).join(' ');
+    lines.push(remaining.length > maxChars + 8 ? `${remaining.slice(0, maxChars + 5).trim()}...` : remaining);
+  }
+  return lines.slice(0, maxLines);
 }
 
 export function parseStatValue(value) {

@@ -43,6 +43,7 @@ export async function createJob(script) {
     audio_path: null,
     output_path: null,
     duration_ms: 0,
+    tts_source: config.limits.skipTts ? 'silent' : 'gemini',
     created_at: Date.now(),
     updated_at: Date.now(),
   };
@@ -74,20 +75,20 @@ async function runJob(id) {
   try {
     setStatus(job, { status: 'processing', current_step: 'tts', progress: 5, updated_at: Date.now() });
 
-    const { audioPath, durationMs, timestamps, skipped } = await generateSpeechAndTimestamps({
+    const { audioPath, durationMs, timestamps, skipped, source } = await generateSpeechAndTimestamps({
       script: job.script,
       jobDir,
     });
     if (skipped) console.log(`[pipeline] job ${id}: TTS skipped, using silent audio (${durationMs}ms)`);
-    setStatus(job, { audio_path: audioPath, duration_ms: durationMs, progress: 25, current_step: 'planning', updated_at: Date.now() });
+    setStatus(job, { audio_path: audioPath, duration_ms: durationMs, tts_source: source || (skipped ? 'silent' : 'gemini'), progress: 15, current_step: 'understanding', updated_at: Date.now() });
 
     const scenes = await planScenes({
       transcript: timestamps,
       script: job.script,
       totalMs: durationMs,
+      jobDir,
     });
-
-    setStatus(job, { progress: 45, current_step: 'assets', updated_at: Date.now() });
+    setStatus(job, { progress: 40, current_step: 'assets', updated_at: Date.now() });
 
     const assetMap = await resolveScenes(scenes);
     console.log(`[pipeline] job ${id}: planned ${scenes.length} scenes:`);
@@ -108,6 +109,7 @@ async function runJob(id) {
         asset,
         jobDir,
         sceneIndex: i,
+        script: job.script,
       });
       sceneClips.push(clipPath);
       const pct = 60 + Math.round(((i + 1) / scenes.length) * 25);

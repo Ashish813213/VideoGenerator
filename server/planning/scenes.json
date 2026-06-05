@@ -1,0 +1,378 @@
+[
+  {
+    "id": "scene_01",
+    "scene_type": "hero",
+    "start_ms": 0,
+    "end_ms": 6000,
+    "layout": "center",
+    "title": "POWERHOUSES OF THE CELL",
+    "subtitle": "They are the central energy source pulsing at the heart of our cellular network.",
+    "highlight_words": [
+      "POWERHOUSES"
+    ],
+    "animation": "kineticTypography",
+    "accent_color": "#8B5CF6",
+    "accent_color_2": "#3B82F6",
+    "accent_color_3": "#EC4899",
+    "text_color": "#FFFFFF",
+    "decorative_color": "#3B82F6",
+    "decorative": [
+      "particles",
+      "pulse",
+      "lines",
+      "floating_circles"
+    ],
+    "lucide_icon_name": "Zap",
+    "primary_asset": "glowing mitochondria core",
+    "secondary_assets": [
+      "pulsing energy particles",
+      "cellular network lines"
+    ],
+    "icon_hints": [
+      "Zap",
+      "Factory",
+      "Network"
+    ],
+    "visual_goal": "Establish mitochondria as the central, powerful energy source, pulsing with vital energy at the heart of a cellular network.",
+    "motion_choreography": [
+      "0.0s: title scale-pop in",
+      "0.5s: central icon pulsates with light",
+      "1.5s: energy particles emerge and swirl upward",
+      "2.8s: network lines subtly connect to core",
+      "4.0s: camera slow zoom in"
+    ],
+    "camera_motion": "zoom_in",
+    "transition_style": "cut",
+    "mood": "Mysterious, powerful",
+    "beat_role": "hook"
+  },
+  {
+    "id": "scene_02",
+    "scene_type": "visual_metaphor",
+    "start_ms": 6000,
+    "end_ms": 12000,
+    "layout": "split",
+    "title": "ENERGY CONVERSION ENGINE",
+    "subtitle": "Glucose and oxygen enter the factory to be transformed into ATP.",
+    "highlight_words": [
+      "ENERGY",
+      "CONVERSION"
+    ],
+    "animation": "kineticTypography",
+    "accent_color": "#3B82F6",
+    "accent_color_2": "#06B6D4",
+    "accent_color_3": "#8B5CF6",
+    "text_color": "#FFFFFF",
+    "decorative_color": "#06B6D4",
+    "decorative": [
+      "lines",
+      "particles",
+      "dots",
+      "blobs"
+    ],
+    "lucide_icon_name": "Factory",
+    "primary_asset": "abstract energy factory",
+    "secondary_assets": [
+      "glucose molecule icon",
+      "oxygen molecule icon",
+      "glowing ATP particles"
+    ],
+    "icon_hints": [
+      "Flask",
+      "AirVent",
+      "Sparkles",
+      "Zap"
+    ],
+    "visual_goal": "Illustrate a concise energy factory process, showing glucose and oxygen entering, transforming, and exiting as glowing ATP particles.",
+    "motion_choreography": [
+      "0.0s: factory icon assembles from lines",
+      "0.8s: glucose and oxygen icons drift in from left",
+      "1.5s: inputs enter factory, internal glow intensifies",
+      "2.5s: glowing ATP particles burst out to the right",
+      "3.5s: title and labels fade in"
+    ],
+    "camera_motion": "pan_right",
+    "transition_style": "fade",
+    "mood": "Explanatory, efficient",
+    "beat_role": "definition"
+  },
+  {
+    "id": "scene_03",
+    "scene_type": "process",
+    "start_ms": 12000,
+    "end_ms": 18000,
+    "layout": "floating",
+    "title": "RELENTLESS FUEL CYCLE",
+    "subtitle": "A continuous process ensuring every cell is constantly fueled.",
+    "highlight_words": [
+      "RELENTLESS",
+      "CYCLE"
+    ],
+    "animation": "fadeUp",
+    "accent_color": "#06B6D4",
+    "accent_color_2": "#3B82F6",
+    "accent_color_3": "#EC4899",
+    "text_color": "#FFFFFF",
+    "decorative_color": "#06B6D4",
+    "decorative": [
+      "lines",
+      "particles",
+      "pulse",
+      "grid"
+    ],
+    "lucide_icon_name": "RefreshCw",
+    "primary_asset": "continuous energy loop diagram",
+    "secondary_assets": [
+      "flowing input arrows",
+      "pulsing energy core",
+      "drifting ATP particles"
+    ],
+    "icon_hints": [
+      "Repeat",
+      "Cycle",
+      "RefreshCw",
+      "Zap"
+    ],
+    "visual_goal": "Emphasize the continuous, cyclical nature of energy production through a dynamic, flowing loop.",
+    "motion_choreography": [
+      "0.0s: energy loop diagram materializes as a glowing circuit",
+      "0.7s: input arrows animate, feeding into central core",
+      "1.5s: central core pulses brightly with each 'cycle'",
+      "2.8s: ATP particles continuously drift along the loop and outward",
+      "4.0s: caption fades in with subtle bounce"
+    ],
+    "camera_motion": "static",
+    "transition_style": "sweep_right",
+    "mood": "Dynamic, relentless",
+    "beat_role": "process",
+    "steps": [
+      {
+        "label": "Glucose Input",
+        "icon": "Activity"
+      },
+      {
+        "label": "Oxygen Processing",
+        "icon": "Wind"
+      },
+      {
+        "label": "ATP Release",
+        "icon": "Zap"
+      }
+    ]
+  },
+  {
+    "id": "scene_04",
+    "scene_type": "stat",
+    "start_ms": 18000,
+    "end_ms": 25000,
+    "layout": "center",
+    "title": "ASTONISHING ENERGY SCALE",
+    "subtitle": "The body produces a mind-boggling amount of energy molecules every minute.",
+    "highlight_words": [
+      "ASTONISHING",
+      "SCALE"
+    ],
+    "animation": "scalePop",
+    "accent_color": "#EC4899",
+    "accent_color_2": "#FACC15",
+    "accent_color_3": "#8B5CF6",
+    "text_color": "#FFFFFF",
+    "decorative_color": "#FACC15",
+    "decorative": [
+      "dots",
+      "particles",
+      "blobs",
+      "light_ray"
+    ],
+    "lucide_icon_name": "Sparkles",
+    "primary_asset": "huge ATP counter",
+    "secondary_assets": [
+      "swirling constellation of ATP dots",
+      "subtle energy field"
+    ],
+    "icon_hints": [
+      "Rocket",
+      "Infinity",
+      "Gauge",
+      "Sparkles"
+    ],
+    "visual_goal": "Visually convey the immense scale of ATP production with a huge, animating number surrounded by a vast constellation of tiny energy units.",
+    "motion_choreography": [
+      "0.0s: central ATP counter appears with a quick count-up effect",
+      "0.8s: thousands of tiny dots representing ATP molecules swirl into frame",
+      "2.0s: dots expand outwards, filling the screen like a galaxy",
+      "3.0s: central counter glows and pulses softly",
+      "4.5s: callout text fades in below the counter"
+    ],
+    "camera_motion": "zoom_out",
+    "transition_style": "zoom_in",
+    "mood": "Awe-inspiring, vast",
+    "beat_role": "scale",
+    "value": "9×10²⁰",
+    "label": "ATP molecules produced every minute"
+  },
+  {
+    "id": "scene_05",
+    "scene_type": "visual_metaphor",
+    "start_ms": 25000,
+    "end_ms": 31000,
+    "layout": "split",
+    "title": "ANCIENT ORIGINS MERGER",
+    "subtitle": "Mitochondria were once free-living bacteria, now integral to every complex cell.",
+    "highlight_words": [
+      "ANCIENT",
+      "MERGER"
+    ],
+    "animation": "kineticTypography",
+    "accent_color": "#A855F7",
+    "accent_color_2": "#8B5CF6",
+    "accent_color_3": "#3B82F6",
+    "text_color": "#FFFFFF",
+    "decorative_color": "#A855F7",
+    "decorative": [
+      "blobs",
+      "lines",
+      "light_ray",
+      "floating_circles"
+    ],
+    "lucide_icon_name": "Dna",
+    "primary_asset": "two merging cellular forms",
+    "secondary_assets": [
+      "glowing DNA strand",
+      "ancient cell outlines",
+      "fusing aura"
+    ],
+    "icon_hints": [
+      "Dna",
+      "Merge",
+      "Bacteria",
+      "Cell"
+    ],
+    "visual_goal": "Represent the endosymbiotic theory by showing two distinct, ancient cellular forms merging and revealing their shared DNA.",
+    "motion_choreography": [
+      "0.0s: two distinct blob-like cell shapes drift into frame from opposite sides",
+      "1.2s: shapes begin to merge, creating a shimmering effect at the point of contac",
+      "2.5s: a glowing double-helix DNA strand emerges within the merged form",
+      "3.5s: title and caption appear with a soft reveal",
+      "4.5s: the merged form pulsates gently"
+    ],
+    "camera_motion": "pan_left",
+    "transition_style": "sweep_left",
+    "mood": "Revealing, intriguing",
+    "beat_role": "surprise"
+  },
+  {
+    "id": "scene_06",
+    "scene_type": "visual_metaphor",
+    "start_ms": 31000,
+    "end_ms": 38000,
+    "layout": "center",
+    "title": "SYSTEM COLLAPSE",
+    "subtitle": "Mitochondrial failure leads to catastrophic organ and muscle breakdown.",
+    "highlight_words": [
+      "SYSTEM",
+      "COLLAPSE"
+    ],
+    "animation": "kineticTypography",
+    "accent_color": "#EF4444",
+    "accent_color_2": "#EC4899",
+    "accent_color_3": "#8B5CF6",
+    "text_color": "#FFFFFF",
+    "decorative_color": "#EF4444",
+    "decorative": [
+      "particles",
+      "lines",
+      "pulse",
+      "blobs"
+    ],
+    "lucide_icon_name": "HeartCrack",
+    "primary_asset": "fractured, sparking energy core",
+    "secondary_assets": [
+      "red warning lights",
+      "broken connection lines",
+      "fading energy particles"
+    ],
+    "icon_hints": [
+      "Radiation",
+      "AlertTriangle",
+      "HeartCrack",
+      "Skull"
+    ],
+    "visual_goal": "Convey the catastrophic impact of mitochondrial failure through a fracturing, sparking energy core and broken connections.",
+    "motion_choreography": [
+      "0.0s: a vibrant energy core shatters into pieces",
+      "0.8s: red warning lights flash rapidly around the broken core",
+      "1.5s: connection lines snap and dissipate into dust",
+      "2.5s: energy particles rapidly fade and disappear",
+      "3.5s: title and callout slam into place with a subtle shake"
+    ],
+    "camera_motion": "zoom_in",
+    "transition_style": "flash",
+    "mood": "Urgent, alarming",
+    "beat_role": "consequence"
+  },
+  {
+    "id": "scene_07",
+    "scene_type": "summary",
+    "start_ms": 38000,
+    "end_ms": 48000,
+    "layout": "floating",
+    "title": "UNDERSTANDING LIFE ITSELF",
+    "subtitle": "A complete, vital cellular network glowing with renewed energy and harmony.",
+    "highlight_words": [
+      "UNDERSTANDING",
+      "LIFE"
+    ],
+    "animation": "wordByWord",
+    "accent_color": "#8B5CF6",
+    "accent_color_2": "#22C55E",
+    "accent_color_3": "#3B82F6",
+    "text_color": "#FFFFFF",
+    "decorative_color": "#22C55E",
+    "decorative": [
+      "lines",
+      "particles",
+      "pulse",
+      "grid"
+    ],
+    "lucide_icon_name": "Network",
+    "primary_asset": "re-integrated cellular network",
+    "secondary_assets": [
+      "pulsing energy points",
+      "connecting light rays",
+      "subtle cell outline"
+    ],
+    "icon_hints": [
+      "Atom",
+      "Network",
+      "Globe",
+      "Heart"
+    ],
+    "visual_goal": "Reiterate the fundamental importance of mitochondria by showing a complete, vital cellular network, glowing with renewed energy and harmony.",
+    "motion_choreography": [
+      "0.0s: fractured elements from previous scene slowly coalesce and mend",
+      "1.2s: the cellular network lights up from center outwards",
+      "2.5s: energy points within the network begin to pulse in harmony",
+      "3.8s: title text emerges from the glowing network",
+      "5.0s: camera slowly zooms out to reveal the full, vibrant system"
+    ],
+    "camera_motion": "zoom_out",
+    "transition_style": "fade",
+    "mood": "Harmonious, profound",
+    "beat_role": "summary",
+    "takeaways": [
+      {
+        "text": "Mitochondria are the essential powerhouses, converting fuel into energy for all ",
+        "icon": null
+      },
+      {
+        "text": "Your body produces an astonishing 9 × 10^20 ATP molecules every minute.",
+        "icon": null
+      },
+      {
+        "text": "These vital organelles have a surprising past as ancient, free-living bacteria.",
+        "icon": null
+      }
+    ]
+  }
+]

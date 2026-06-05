@@ -115,27 +115,18 @@ function updateProgress(job) {
   els.progressPct.textContent = (job.progress || 0) + '%';
   els.progressStep.textContent = job.current_step || '…';
 
-  const stepMap = {
-    tts: 'tts',
-    planning: 'planning',
-    assets: 'assets',
-    rendering: 'rendering',
-    muxing: 'muxing',
-    done: 'done',
-    failed: 'failed',
-  };
-  const current = stepMap[job.current_step];
-  const order = ['tts', 'planning', 'assets', 'rendering', 'muxing'];
-  const currentIdx = current ? order.indexOf(current) : -1;
+  const order = ['tts', 'understanding', 'directing', 'planning', 'assets', 'rendering', 'muxing'];
+  const current = job.current_step;
+  const currentIdx = order.indexOf(current);
   els.stepsList.querySelectorAll('li').forEach(li => {
     const step = li.dataset.step;
     const idx = order.indexOf(step);
     li.classList.remove('active', 'done');
-    if (current === 'done' || (currentIdx === -1 && job.progress === 100)) {
+    if (current === 'done' || job.progress === 100) {
       li.classList.add('done');
-    } else if (idx < currentIdx) {
+    } else if (idx !== -1 && idx < currentIdx) {
       li.classList.add('done');
-    } else if (idx === currentIdx) {
+    } else if (step === current) {
       li.classList.add('active');
     }
   });
@@ -151,7 +142,8 @@ function showResult(jobId, job) {
   const url = `/api/video/${jobId}`;
   els.resultVideo.src = url;
   els.downloadLink.href = `/api/video/${jobId}/download`;
-  els.resultMeta.textContent = `Job ${jobId} · ${(job.duration_ms / 1000).toFixed(1)}s · ready at ${new Date().toLocaleTimeString()}`;
+  const ttsBadge = job.tts_source === 'silent' ? 'silent audio' : 'voiceover';
+  els.resultMeta.textContent = `Job ${jobId} · ${(job.duration_ms / 1000).toFixed(1)}s · ${ttsBadge} · ready at ${new Date().toLocaleTimeString()}`;
   els.progressCard.classList.add('hidden');
   els.generateBtn.disabled = false;
   els.resultCard.scrollIntoView({ behavior: 'smooth', block: 'start' });

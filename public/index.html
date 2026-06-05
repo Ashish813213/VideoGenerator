@@ -21,7 +21,7 @@
   <main class="container">
     <section class="card input-card">
       <h2>1. Paste your script</h2>
-      <p class="hint">Plain text. The AI will narrate it and create a 1920×1080 video with relevant images. Max 5,000 characters.</p>
+      <p class="hint">Plain text. The server will narrate it with Gemini TTS and render a 1920×1080 video with relevant icons. Max 5,000 characters.</p>
       <textarea
         id="script"
         rows="8"
@@ -52,8 +52,10 @@
       </div>
       <ol class="steps" id="stepsList">
         <li data-step="tts"><span class="bullet">·</span>Generating voiceover</li>
+        <li data-step="understanding"><span class="bullet">·</span>Understanding the script</li>
+        <li data-step="directing"><span class="bullet">·</span>Visual direction</li>
         <li data-step="planning"><span class="bullet">·</span>Planning scenes with AI</li>
-        <li data-step="assets"><span class="bullet">·</span>Fetching images</li>
+        <li data-step="assets"><span class="bullet">·</span>Resolving icons</li>
         <li data-step="rendering"><span class="bullet">·</span>Rendering frames</li>
         <li data-step="muxing"><span class="bullet">·</span>Muxing audio</li>
       </ol>

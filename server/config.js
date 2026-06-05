@@ -67,7 +67,7 @@ export const config = {
 
   gemini: {
     ttsModel: 'gemini-2.5-flash-preview-tts',
-    ttsVoice: 'en-US-Standard-C',
+    ttsVoice: 'Kore',
     ttsRate: 0.95,
     plannerModel: 'gemini-flash-latest',
   },

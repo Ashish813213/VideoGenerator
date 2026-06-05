@@ -22,37 +22,113 @@ export const FONTS = {
 };
 
 export const COLORS = {
-  bgDark: '#0A0A0A',
-  bgLight: '#FAFAFA',
+  bgDark: '#020617',
+  bgMid: '#0F172A',
+  bgLight: '#1E293B',
+  paperLight: '#FAFAFA',
   blue: '#3B82F6',
+  blueDeep: '#1E3A8A',
+  blueLight: '#60A5FA',
   cyan: '#06B6D4',
   purple: '#8B5CF6',
+  purpleDeep: '#4C1D95',
+  purpleLight: '#A855F7',
+  pink: '#EC4899',
   emerald: '#10B981',
   green: '#22C55E',
-  orange: '#F97316',
-  red: '#EF4444',
+  greenLight: '#A3E635',
   yellow: '#FACC15',
+  orange: '#F97316',
+  orangeDeep: '#C2410C',
+  orangeLight: '#FDBA74',
+  red: '#EF4444',
   white: '#FFFFFF',
   black: '#000000',
 };
 
-export const TOPIC_PALETTE = {
-  technology: { primary: COLORS.blue, accent: COLORS.cyan, glow: COLORS.blue },
-  finance: { primary: COLORS.emerald, accent: COLORS.green, glow: COLORS.emerald },
-  warning: { primary: COLORS.red, accent: COLORS.orange, glow: COLORS.red },
-  science: { primary: COLORS.purple, accent: COLORS.blue, glow: COLORS.purple },
-  success: { primary: COLORS.green, accent: COLORS.emerald, glow: COLORS.green },
-  energy: { primary: COLORS.orange, accent: COLORS.yellow, glow: COLORS.orange },
-  neutral: { primary: COLORS.blue, accent: COLORS.purple, glow: COLORS.blue },
+export const GRADIENTS = {
+  dark: [COLORS.bgDark, COLORS.bgMid, COLORS.bgLight],
+  blue: ['#020617', '#0B1F4D', COLORS.blueDeep],
+  purple: ['#070311', '#1E103A', COLORS.purpleDeep],
+  orange: ['#120701', '#431407', '#9A3412'],
+  emerald: ['#02130E', '#064E3B', '#047857'],
+  cyberpunk: ['#070311', '#2E1065', '#831843'],
+  warm: ['#120701', '#431407', '#9A3412'],
+};
+
+export const TOPIC_PALETTES = {
+  technology: {
+    name: 'technology',
+    gradient: GRADIENTS.blue,
+    colors: [COLORS.blue, COLORS.purple, COLORS.cyan, COLORS.blueLight, COLORS.purpleLight],
+    glow: COLORS.blue,
+  },
+  ai: {
+    name: 'ai',
+    gradient: GRADIENTS.cyberpunk,
+    colors: [COLORS.purple, COLORS.pink, COLORS.blue, COLORS.purpleLight, COLORS.cyan],
+    glow: COLORS.purple,
+  },
+  finance: {
+    name: 'finance',
+    gradient: GRADIENTS.emerald,
+    colors: [COLORS.emerald, COLORS.green, COLORS.yellow, COLORS.greenLight, COLORS.emerald],
+    glow: COLORS.emerald,
+  },
+  warning: {
+    name: 'warning',
+    gradient: [COLORS.bgDark, '#7F1D1D', COLORS.red],
+    colors: [COLORS.red, COLORS.orange, COLORS.yellow, COLORS.orangeLight, COLORS.red],
+    glow: COLORS.red,
+  },
+  cybersecurity: {
+    name: 'cybersecurity',
+    gradient: ['#0A0A0A', COLORS.red, COLORS.orange],
+    colors: [COLORS.red, COLORS.orange, '#1F2937', COLORS.red, COLORS.yellow],
+    glow: COLORS.red,
+  },
+  science: {
+    name: 'science',
+    gradient: GRADIENTS.purple,
+    colors: [COLORS.purple, COLORS.blue, COLORS.pink, COLORS.purpleLight, COLORS.cyan],
+    glow: COLORS.purple,
+  },
+  success: {
+    name: 'success',
+    gradient: GRADIENTS.emerald,
+    colors: [COLORS.green, COLORS.emerald, COLORS.yellow, COLORS.greenLight, COLORS.emerald],
+    glow: COLORS.green,
+  },
+  energy: {
+    name: 'energy',
+    gradient: GRADIENTS.warm,
+    colors: [COLORS.orange, COLORS.yellow, COLORS.red, COLORS.orangeLight, COLORS.yellow],
+    glow: COLORS.orange,
+  },
+  startup: {
+    name: 'startup',
+    gradient: [COLORS.bgDark, COLORS.blue, COLORS.purple],
+    colors: [COLORS.blue, COLORS.white, COLORS.purple, COLORS.cyan, COLORS.blueLight],
+    glow: COLORS.blue,
+  },
+  neutral: {
+    name: 'neutral',
+    gradient: GRADIENTS.dark,
+    colors: [COLORS.blue, COLORS.purple, COLORS.cyan, COLORS.purpleLight, COLORS.blueLight],
+    glow: COLORS.blue,
+  },
 };
 
 const TOPIC_KEYWORDS = {
-  technology: ['computer','cpu','gpu','chip','processor','code','software','hardware','ai','machine learning','neural','data','algorithm','app','web','server','cloud','database','api','python','javascript','programming','developer','engineer','tech','digital','binary','transistor','memory','ram','ssd','disk','network','internet','wifi','5g','router','browser'],
+  ai: ['ai','artificial intelligence','machine learning','neural network','deep learning','llm','gpt','chatgpt','transformer','chatbot','generative','diffusion','prompt','token','embedding','agent','rag','fine-tuning','model','training','inference'],
+  cybersecurity: ['hack','hacker','breach','malware','phishing','vulnerability','exploit','ransomware','ddos','zero-day','cybersecurity','security','password','encryption','firewall','threat','attack','virus','trojan','spyware'],
+  technology: ['computer','cpu','gpu','chip','processor','code','software','hardware','data','algorithm','app','web','server','cloud','database','api','python','javascript','programming','developer','tech','digital','binary','transistor','memory','ram','ssd','disk','network','internet','wifi','5g','router','browser'],
   finance: ['money','finance','invest','stock','market','trading','economy','bank','loan','credit','debt','inflation','revenue','profit','loss','dollar','euro','crypto','bitcoin','ethereum','blockchain','portfolio','dividend','interest','tax','budget','salary','wealth','asset','liability'],
   warning: ['warning','danger','risk','threat','attack','hack','breach','malware','virus','fraud','scam','crash','failure','error','critical','alert','emergency','deadly','toxic','hazard','pollution','climate','extinction','pandemic','war','crime'],
-  science: ['science','physics','chemistry','biology','molecule','cell','dna','gene','atom','quantum','relativity','energy','force','gravity','evolution','species','bacteria','virus','protein','enzyme','neuron','brain','experiment','hypothesis','theory','research','laboratory','microscope','telescope','space','planet','star','galaxy'],
+  science: ['science','physics','chemistry','biology','molecule','cell','dna','gene','atom','quantum','relativity','energy','force','gravity','evolution','species','bacteria','protein','enzyme','neuron','brain','experiment','hypothesis','theory','research','laboratory','microscope','telescope','space','planet','star','galaxy'],
   success: ['success','win','achieve','goal','record','best','top','fastest','growth','improve','boost','increase','optimize','efficient','productive','leader','winner','champion','milestone','celebrate'],
   energy: ['power','electric','battery','voltage','current','solar','wind','nuclear','fuel','engine','motor','turbine','generator','joule','watt','kilowatt','megawatt'],
+  startup: ['startup','founder','launch','product','growth','users','customer','saas','venture','seed','series','funding','investor','y combinator','pitch','mvp','scale'],
 };
 
 export function detectTopic(script) {
@@ -69,7 +145,7 @@ export function detectTopic(script) {
 }
 
 export function paletteFor(topic) {
-  return TOPIC_PALETTE[topic] || TOPIC_PALETTE.neutral;
+  return TOPIC_PALETTES[topic] || TOPIC_PALETTES.neutral;
 }
 
 export const SCENE_TYPES = {
@@ -81,9 +157,24 @@ export const SCENE_TYPES = {
   STAT: 'stat',
   CALLOUT: 'callout',
   SUMMARY: 'summary',
+  VISUAL_METAPHOR: 'visual_metaphor',
+  NETWORK: 'network',
+  DATA_FLOW: 'data_flow',
+  DIAGRAM: 'diagram',
+  RELATIONSHIP: 'relationship',
 };
 
 export const SCENE_TYPE_LIST = Object.values(SCENE_TYPES);
+
+export const SCENE_TYPE_FALLBACK = {
+  visual_metaphor: 'hero',
+  network: 'process',
+  data_flow: 'process',
+  diagram: 'process',
+  relationship: 'comparison',
+};
+
+export const LAYOUTS = ['center', 'left', 'right', 'top', 'bottom', 'split', 'floating', 'grid'];
 
 export const W = 1920;
 export const H = 1080;

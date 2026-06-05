@@ -1,9 +1,6 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
-import { config } from './config.js';
 import { pickIconForQuery, normalizeLucideName } from './lucide.js';
-import { SCENE_TYPE_LIST, COLORS, paletteFor, detectTopic } from './design.js';
-
-const genAI = new GoogleGenerativeAI(config.geminiApiKey);
+import { SCENE_TYPE_LIST, SCENE_TYPE_FALLBACK, paletteFor, detectTopic } from './design.js';
+import { orchestrate } from './planning/orchestrate.js';
 
 const LUCIDE_HINT = [
   'Cpu','Code','Code2','Database','Server','Cloud','CloudLightning','Wifi','Monitor','Smartphone','Bot','CircuitBoard','Network',
@@ -27,91 +24,20 @@ const LUCIDE_HINT = [
   'Camera','Image','Film','Video','Tv','MonitorPlay','PlayCircle',
   'Box','Package','Layers','Stack','Archive','Folder','File','FileText',
   'GitBranch','GitCommit','GitMerge','GitPullRequest','Terminal','Command','Cog','Wrench','Hammer',
+  'ShieldAlert','ShieldX','Bug','Skull','Crosshair','Siren','Flame',
+  'Network','Wifi','Radio','Antenna','Satellite','Router',
+  'Brain','BrainCircuit','Sparkles','Wand2','Workflow',
   'Anchor','Tent','Backpack',
 ].join(', ');
-
-const SYSTEM_PROMPT = `You are an elite motion graphics director (Apple / Kurzgesagt / Veritasium style). Transform a script into a high-impact scene plan for a 30–90 second explainer video.
-
-DESIGN LANGUAGE
-- Dark premium look. Default background: #0A0A0A (near-black). Use #FAFAFA only for bright/optimistic topics.
-- Topic colors are pre-decided (you do NOT choose bg_color). Use the supplied 'palette' object to set accent_color.
-- Display text: short, bold, uppercase-friendly, 2–6 words. Body: short explanatory phrases.
-- Every scene must include at least one motion keyword in 'animation': scalePop, fadeUp, fadeDown, wordByWord, slideLeft, slideRight, blurReveal, kineticTypography, highlightSweep, bouncePop, drawSVG, popIn, elasticScale.
-
-SCENE TYPES — pick exactly one per scene, matching the narrative beat:
-1. "hero"  — Opening/title. Big headline + subtitle. Use for the first 3–5 seconds.
-2. "definition"  — Define a term. Layout: large keyword (title) + 1–2 line definition (body). Include 'lucide_icon_name'.
-3. "process"  — Sequential steps. REQUIRED: 'steps' (array of 2–4 short strings, e.g. ["Input","Process","Output"]) and an icon per step. Steps animate in left-to-right.
-4. "timeline"  — Past → Present → Future. REQUIRED: 'milestones' (array of {label, year}). Markers slide along a horizontal line.
-5. "comparison"  — Left vs Right. REQUIRED: 'left' and 'right' objects: {title, points:[string], icon, color}.
-6. "stat"  — Big animated number. REQUIRED: 'value' (string, e.g. "95%"), 'label' (short caption), 'prefix'/'suffix' optional. Number scales 0→final.
-7. "callout"  — Highlight a single important concept. Large colored card with glow border. Include 'lucide_icon_name' and a one-line insight.
-8. "summary"  — 3 key takeaways. REQUIRED: 'takeaways' (array of 3 short strings with optional icon names).
-
-ANIMATION RULES
-- "hero"     → "scalePop" or "kineticTypography"
-- "definition" → "wordByWord" or "fadeUp"
-- "process"  → "slideRight" for steps
-- "timeline" → "slideLeft" for markers
-- "comparison" → "slideLeft" (left) and "slideRight" (right)
-- "stat"     → "scalePop" for the number
-- "callout"  → "bouncePop" or "scalePop"
-- "summary"  → "fadeUp" per takeaway
-
-TEXT ANIMATIONS allowed: scalePop, typewriter, fadeUp, fadeDown, wordByWord, slideLeft, slideRight, blurReveal, kineticTypography, highlightSweep, bouncePop.
-
-TEXT RULES
-- title: 2–6 words. uppercase-friendly. The single most important phrase.
-- subtitle: 1 short sentence, max 10 words. The 'so what'.
-- For important keywords in the title, set 'highlight_words' to an array of words to render in the accent color (gradient glow effect).
-- For stats, set 'value' to the final number (e.g. "95%", "10X", "3.5B").
-
-ICON
-- Provide 'lucide_icon_name' (PascalCase) for definition / callout / process steps / summary takeaways.
-- Use only names from this curated set: ${LUCIDE_HINT}
-- If a step in 'process' or a takeaway in 'summary' has its own icon, add an 'icon' field to that item.
-
-COLORS
-- 'accent_color' is REQUIRED. Pick the main brand color for the topic from the supplied palette.
-- 'text_color' defaults to #FFFFFF.
-- Do NOT set 'bg_color' (the renderer decides; default is #0A0A0A dark or #FAFAFA light per topic).
-
-TIMING
-- Scene timings must cover the entire audio without gaps. Last scene ends at total_ms.
-- A 60-second script typically has 5–9 scenes.
-- Hero scene: ~3–4s. Definition: 4–6s. Process: 5–7s. Stat: 4–5s. Summary: 5–6s.
-
-OUTPUT
-- Output ONLY a valid JSON array. No markdown, no commentary.
-- The 'id' field is optional; we will assign it.
-- Use these fields per scene:
-  {
-    "scene_type": "hero" | "definition" | "process" | "timeline" | "comparison" | "stat" | "callout" | "summary",
-    "start_ms": 0,
-    "end_ms": 1720,
-    "title": "WHAT IS A CPU?",
-    "subtitle": "The brain of the computer",
-    "highlight_words": ["CPU"],
-    "animation": "scalePop",
-    "accent_color": "#3B82F6",
-    "text_color": "#FFFFFF",
-    "lucide_icon_name": "Cpu" | null,
-    "value": "95%" | null,            // stat only
-    "label": "faster than last gen"   // stat only
-    "steps": [{"label":"Input","icon":"Play"}, ...]   // process only
-    "milestones": [{"label":"1970","year":"1971"}, ...] // timeline only
-    "left":  {"title":"Old","points":[...],"icon":"...","color":"#EF4444"}   // comparison
-    "right": {"title":"New","points":[...],"icon":"...","color":"#10B981"}   // comparison
-    "takeaways": [{"text":"Fast","icon":"Zap"}, ...]   // summary
-  }
-`;
 
 const VALID_ANIMS = new Set([
   'scalePop','typewriter','fadeUp','fadeDown','wordByWord','slideLeft','slideRight',
   'blurReveal','kineticTypography','highlightSweep','bouncePop','drawSVG','popIn',
   'elasticScale','pulse','zoomIn','zoomOut','parallax','focusReveal','floatAnimation','slideReveal',
-  'rotate','fade_in','slide_in','zoom_in','pulse_old',
+  'rotate','fade_in','slide_in','zoom_in',
 ]);
+const VALID_LAYOUTS = new Set(['center','left','right','top','bottom','split','floating','grid']);
+const VALID_DECORATIVE = new Set(['floating_circles','blobs','dots','lines','grid','pulse','particles','sweep','light_ray']);
 const VALID_HEX = /^#([0-9a-fA-F]{3}){1,2}$/;
 
 function safeStr(v, max = 80) {
@@ -119,32 +45,69 @@ function safeStr(v, max = 80) {
   return v.slice(0, max);
 }
 
-function safeArray(v) {
-  return Array.isArray(v) ? v : [];
-}
+function safeArray(v) { return Array.isArray(v) ? v : []; }
 
 function validateScene(s, i, totalMs) {
   const sceneType = SCENE_TYPE_LIST.includes(s.scene_type) ? s.scene_type : 'definition';
-  const anim = VALID_ANIMS.has(s.animation) ? s.animation : 'fadeUp';
+  if (sceneType !== s.scene_type && SCENE_TYPE_FALLBACK[s.scene_type]) {
+    const mapped = SCENE_TYPE_FALLBACK[s.scene_type];
+    if (SCENE_TYPE_LIST.includes(mapped)) return validateScene({ ...s, scene_type: mapped }, i, totalMs);
+  }
+  const anim = VALID_ANIMS.has(s.animation) ? s.animation : 'scalePop';
+  const layout = VALID_LAYOUTS.has(s.layout) ? s.layout : 'center';
   const accent = VALID_HEX.test(s.accent_color || '') ? s.accent_color : '#3B82F6';
+  const accent2 = VALID_HEX.test(s.accent_color_2 || '') ? s.accent_color_2 : accent;
+  const accent3 = VALID_HEX.test(s.accent_color_3 || '') ? s.accent_color_3 : accent2;
   const textColor = VALID_HEX.test(s.text_color || '') ? s.text_color : '#FFFFFF';
+  const decColor = VALID_HEX.test(s.decorative_color || '') ? s.decorative_color : accent;
   const iconName = typeof s.lucide_icon_name === 'string'
     ? (normalizeLucideName(s.lucide_icon_name) || null)
     : null;
+
+  const decorative = safeArray(s.decorative)
+    .filter(x => VALID_DECORATIVE.has(x))
+    .slice(0, 8);
+  if (!decorative.length) {
+    const defaults = {
+      hero: ['floating_circles', 'pulse', 'dots'],
+      definition: ['dots', 'lines'],
+      callout: ['floating_circles', 'pulse'],
+      stat: ['floating_circles', 'sweep'],
+      process: ['lines', 'dots'],
+      timeline: ['lines', 'dots'],
+      comparison: ['floating_circles'],
+      summary: ['floating_circles', 'dots'],
+    };
+    decorative.push(...(defaults[sceneType] || ['dots']));
+  }
 
   const out = {
     id: typeof s.id === 'string' ? s.id : `scene_${String(i + 1).padStart(2, '0')}`,
     scene_type: sceneType,
     start_ms: Math.max(0, parseInt(s.start_ms, 10) || 0),
     end_ms: Math.max(0, parseInt(s.end_ms, 10) || 0),
-    title: safeStr(s.title, 60),
-    subtitle: safeStr(s.subtitle, 100),
+    layout,
+    title: safeStr(s.title, 80),
+    subtitle: safeStr(s.subtitle, 160),
     highlight_words: safeArray(s.highlight_words).map(x => safeStr(x, 20)).slice(0, 6),
     animation: anim,
     accent_color: accent,
+    accent_color_2: accent2,
+    accent_color_3: accent3,
     text_color: textColor,
+    decorative_color: decColor,
+    decorative,
     lucide_icon_name: iconName,
-    bg_color: '#0A0A0A',
+    bg_color: '#020617',
+    primary_asset: safeStr(s.primary_asset, 60),
+    secondary_assets: safeArray(s.secondary_assets).map(x => safeStr(x, 40)).slice(0, 4),
+    icon_hints: safeArray(s.icon_hints).map(x => safeStr(x, 30)).slice(0, 4),
+    visual_goal: safeStr(s.visual_goal, 200),
+    motion_choreography: safeArray(s.motion_choreography).map(x => safeStr(x, 80)).slice(0, 8),
+    camera_motion: typeof s.camera_motion === 'string' ? s.camera_motion : 'static',
+    transition_style: typeof s.transition_style === 'string' ? s.transition_style : 'cut',
+    mood: safeStr(s.mood, 40),
+    beat_role: safeStr(s.beat_role, 20),
   };
 
   if (sceneType === 'stat') {
@@ -210,14 +173,19 @@ function fillGaps(scenes, totalMs) {
         scene_type: 'definition',
         start_ms: cursor,
         end_ms: Math.min(s.start_ms, totalMs),
+        layout: 'center',
         title: '',
         subtitle: '',
         highlight_words: [],
         animation: 'fadeUp',
         accent_color: '#3B82F6',
+        accent_color_2: '#8B5CF6',
+        accent_color_3: '#06B6D4',
         text_color: '#FFFFFF',
+        decorative_color: '#3B82F6',
+        decorative: ['dots'],
         lucide_icon_name: null,
-        bg_color: '#0A0A0A',
+        bg_color: '#020617',
       });
     }
     out.push(s);
@@ -251,55 +219,35 @@ function tryParse(text) {
   return null;
 }
 
-export async function planScenes({ transcript, script, totalMs }) {
-  const topic = detectTopic(script);
-  const palette = paletteFor(topic);
-
-  const model = genAI.getGenerativeModel({
-    model: config.gemini.plannerModel,
-    generationConfig: { responseMimeType: 'application/json', temperature: 0.85 },
-    systemInstruction: SYSTEM_PROMPT,
-  });
-
-  const userMsg = JSON.stringify({
-    transcript,
-    script,
-    total_ms: totalMs,
-    topic,
-    palette: { primary: palette.primary, accent: palette.accent, glow: palette.glow },
-  }, null, 2);
-
-  let scenes = null;
-  for (let attempt = 0; attempt < 2 && !scenes; attempt++) {
-    try {
-      const result = await model.generateContent(userMsg);
-      const text = result.response.text();
-      const parsed = tryParse(text);
-      if (parsed) {
-        scenes = parsed.map((s, i) => validateScene(s, i, totalMs));
-      }
-    } catch (err) {
-      console.warn(`[planner] attempt ${attempt + 1} failed:`, err.message);
-    }
-  }
-
-  if (!scenes) {
-    console.warn('[planner] using fallback single scene');
-    scenes = [{
+export async function planScenes({ transcript, script, totalMs, jobDir }) {
+  let rawScenes;
+  try {
+    rawScenes = await orchestrate({ script, transcript, totalMs, jobDir });
+  } catch (err) {
+    console.error('[planner] orchestrate failed, using single-scene fallback:', err.message);
+    const topic = detectTopic(script);
+    const palette = paletteFor(topic);
+    rawScenes = [{
       id: 'scene_01',
       scene_type: 'hero',
       start_ms: 0,
       end_ms: totalMs,
+      layout: 'center',
       title: script.slice(0, 60).toUpperCase(),
       subtitle: '',
       highlight_words: [],
-      animation: 'scalePop',
-      accent_color: palette.primary,
+      animation: 'kineticTypography',
+      accent_color: palette.colors[0],
+      accent_color_2: palette.colors[1],
+      accent_color_3: palette.colors[2],
       text_color: '#FFFFFF',
+      decorative_color: palette.glow,
+      decorative: ['floating_circles','pulse','dots'],
       lucide_icon_name: pickIconForQuery(script) || 'Sparkles',
-      bg_color: '#0A0A0A',
+      bg_color: '#020617',
     }];
   }
 
-  return fillGaps(scenes, totalMs);
+  const validated = rawScenes.map((s, i) => validateScene(s, i, totalMs));
+  return fillGaps(validated, totalMs);
 }

@@ -40,14 +40,14 @@ function hashIcon(name) {
 export async function renderLucideIcon(iconName, color = '#FFFFFF', size = 512) {
   const normalized = normalizeLucideName(iconName);
   if (!normalized) return null;
-  const key = `${hashIcon(normalized)}_${color.replace('#', '')}_${size}`;
+  const key = `v2_${hashIcon(normalized)}_${color.replace('#', '')}_${size}`;
   const outPath = path.join(ICON_DIR, `${key}.png`);
   try {
     await fs.access(outPath);
     return outPath;
   } catch {}
 
-  const inner = getIconSvg(normalized);
+  const inner = getIconSvg(normalized)?.replaceAll('currentColor', color);
   if (!inner) return null;
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${inner}</svg>`;
   await fs.mkdir(ICON_DIR, { recursive: true });
@@ -140,7 +140,7 @@ async function fetchImageFromNetwork(query) {
 export async function resolveSceneVisual(scene) {
   const accent = scene.accent_color || '#3B82F6';
   const textColor = scene.text_color || '#FFFFFF';
-  const iconColor = scene.bg_color === '#0A0A0A' || scene.bg_color === '#000000' ? '#FFFFFF' : textColor;
+  const iconColor = '#FFFFFF';
 
   const result = {
     iconPath: null,
@@ -170,8 +170,9 @@ export async function resolveSceneVisual(scene) {
     result.iconPath = result.iconPaths[scene.lucide_icon_name] || null;
   }
 
-  if (scene.image_query) {
-    const img = await fetchImageFromNetwork(scene.image_query);
+  const imageQuery = scene.image_query || [scene.primary_asset, scene.visual_goal, scene.title].filter(Boolean).join(' ');
+  if (imageQuery && /hero|definition|callout|comparison|visual_metaphor|network|data_flow|diagram|relationship|stat/.test(scene.scene_type || '')) {
+    const img = await fetchImageFromNetwork(imageQuery);
     if (img) result.imagePath = img.path;
   }
 
