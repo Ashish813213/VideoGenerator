@@ -19,6 +19,9 @@ export const FONTS = {
   bodyBold: fontPath('Inter-Bold.ttf'),
   bodySemi: fontPath('Inter-SemiBold.ttf'),
   stat: fontPath('BebasNeue-Regular.ttf'),
+  impact: fontPath('Anton-Regular.ttf'),
+  playful: fontPath('LuckiestGuy-Regular.ttf'),
+  handwritten: fontPath('PermanentMarker-Regular.ttf'),
 };
 
 export const COLORS = {
@@ -47,13 +50,13 @@ export const COLORS = {
 };
 
 export const GRADIENTS = {
-  dark: [COLORS.bgDark, COLORS.bgMid, COLORS.bgLight],
-  blue: ['#020617', '#0B1F4D', COLORS.blueDeep],
-  purple: ['#070311', '#1E103A', COLORS.purpleDeep],
-  orange: ['#120701', '#431407', '#9A3412'],
-  emerald: ['#02130E', '#064E3B', '#047857'],
-  cyberpunk: ['#070311', '#2E1065', '#831843'],
-  warm: ['#120701', '#431407', '#9A3412'],
+  dark: ['#080B12', '#0C1220', '#111827'],
+  blue: ['#070B14', '#0B1528', '#12213D'],
+  purple: ['#090A14', '#151226', '#24183A'],
+  orange: ['#0E0B09', '#21150F', '#3A2115'],
+  emerald: ['#070D0C', '#0C1B18', '#123229'],
+  cyberpunk: ['#090A14', '#181329', '#2B1733'],
+  warm: ['#0E0B09', '#21150F', '#3A2115'],
 };
 
 export const TOPIC_PALETTES = {
@@ -83,7 +86,7 @@ export const TOPIC_PALETTES = {
   },
   cybersecurity: {
     name: 'cybersecurity',
-    gradient: ['#0A0A0A', COLORS.red, COLORS.orange],
+    gradient: ['#090A0D', '#211014', '#351619'],
     colors: [COLORS.red, COLORS.orange, '#1F2937', COLORS.red, COLORS.yellow],
     glow: COLORS.red,
   },
@@ -107,7 +110,7 @@ export const TOPIC_PALETTES = {
   },
   startup: {
     name: 'startup',
-    gradient: [COLORS.bgDark, COLORS.blue, COLORS.purple],
+    gradient: ['#070B14', '#101A2E', '#201838'],
     colors: [COLORS.blue, COLORS.white, COLORS.purple, COLORS.cyan, COLORS.blueLight],
     glow: COLORS.blue,
   },

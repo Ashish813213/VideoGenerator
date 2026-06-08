@@ -217,6 +217,37 @@ model: gemini-2.5-flash
 The WAV was valid. STT did not fail because of audio encoding. Until quota resets
 or billing/quota is increased, the timestamp fallback will be used.
 
+## Animation Smoothness Update
+
+The renderer previously changed image and icon frame dimensions on every frame
+while keeping a fixed overlay origin. This produced visible edge warping,
+top-left anchoring, abrupt icon size jumps, and occasional nearly empty frames
+between scenes.
+
+The current renderer now:
+
+- renders stock images into a fixed-size cover crop before animating them
+- applies center-anchored smoothstep zoom instead of linear 12% resizing
+- limits image drift to a subtle 6 x 4 pixel float
+- uses continuous 2.5% icon pulses instead of binary 8% size jumps
+- places animated icons inside a fixed transparent frame
+- uses eased, restrained camera zooms
+- keeps displayed text and cards alive through the final scene frame
+- limits display headlines to five words and fits them to the layout width
+- crossfades scene clips for 250 ms using cloned tail frames
+- preserves the original summed scene duration during crossfades
+- renders gradients and final clips consistently at 30 fps
+- removes the intentional blur previously applied to primary stock images
+
+A local FFmpeg smoke test rendered two 1.8 second scenes into a 3.60 second
+video, confirming that the crossfade does not shorten narration timing. Frames
+before, during, and after the transition contained no black flash. The formerly
+black stat scene also rendered successfully after the stat expression fix.
+
+The generated visual quality can still be basic when Gemini planning is blocked
+by quota. Smooth rendering cannot replace the richer scene specifications that
+V10 would normally produce.
+
 ### P1 - Gemini planning quota can bypass V10
 
 The same quota pressure can block all planner models. When that happens, V10 is

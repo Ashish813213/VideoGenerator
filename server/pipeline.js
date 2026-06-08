@@ -122,7 +122,11 @@ async function runJob(id) {
     if (sceneClips.length === 1) {
       await fs.copyFile(sceneClips[0], videoOnly);
     } else {
-      await concatScenes(sceneClips, videoOnly);
+      await concatScenes(
+        sceneClips,
+        videoOnly,
+        scenes.map(scene => Math.max(500, scene.end_ms - scene.start_ms)),
+      );
     }
 
     const finalOut = path.join(config.paths.output, `${id}.mp4`);

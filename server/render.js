@@ -1,4 +1,3 @@
-import fs from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import ffmpegPath from 'ffmpeg-static';
@@ -24,8 +23,10 @@ function runFfmpeg({ inputs, filterGraph, output, durationSec }) {
       .complexFilter(filterGraph, outputLabel)
       .outputOptions([
         '-c:v libx264',
-        '-preset veryfast',
-        '-crf 21',
+        '-preset medium',
+        '-crf 18',
+        '-tune animation',
+        '-profile:v high',
         '-pix_fmt yuv420p',
         '-r 30',
         `-t ${durationSec.toFixed(3)}`,
@@ -92,7 +93,7 @@ export async function renderScene({ scene, asset, jobDir, sceneIndex, script }) 
       await ffmpeg()
         .input(`color=c=black:s=1920x1080:r=30:d=${durationSec.toFixed(3)}`)
         .inputOptions(['-f lavfi'])
-        .outputOptions(['-c:v libx264', '-preset veryfast', '-pix_fmt yuv420p', '-y'])
+        .outputOptions(['-c:v libx264', '-preset medium', '-crf 18', '-tune animation', '-profile:v high', '-pix_fmt yuv420p', '-y'])
         .output(out)
         .run();
     }
@@ -102,9 +103,14 @@ export async function renderScene({ scene, asset, jobDir, sceneIndex, script }) 
 
 function buildFallbackGraph(scene, ctx, durSec) {
   const inputs = [];
-  const title = (scene.title || scene.id || '').toUpperCase();
+  const title = String(scene.title || scene.id || '')
+    .split(/\s+/)
+    .slice(0, 5)
+    .join(' ')
+    .toUpperCase();
   const color = scene.bg_color || '#0A0A0A';
   const fg = scene.accent_color || '#FFFFFF';
+  const fallbackSize = Math.max(52, Math.min(110, Math.floor(1500 / Math.max(8, title.length * 0.56))));
   const font = config.paths.font;
   const fontExpr = font ? font.replace(/\\/g, '/').replace(/'/g, "\\'") : null;
   const parts = [
@@ -123,27 +129,54 @@ function buildFallbackGraph(scene, ctx, durSec) {
   const textOpts = [
     `text='${(title || '').replace(/'/g, "\\'")}'`,
     `fontcolor=${fg}`,
-    `fontsize=120`,
+    `fontsize=${fallbackSize}`,
   ];
   if (fontExpr) textOpts.push(`fontfile='${fontExpr}'`);
   textOpts.push(`x=(w-text_w)/2:y=(h-text_h)/2+200`);
   parts.push(`[t1]drawtext=${textOpts.join(':')}[t2]`);
-  parts.push(`[t2]fade=t=in:st=0:d=0.4:alpha=1[out]`);
+  parts.push(`[t2]copy[out]`);
   return { inputs, filterGraph: parts.join(';') };
 }
 
-export async function concatScenes(scenePaths, outPath) {
-  const listFile = (outPath + '.list.txt').replace(/\\/g, '/');
-  const absoluteScenes = scenePaths.map(p => path.resolve(p).replace(/\\/g, '/'));
-  const listContent = absoluteScenes.map(p => `file '${p.replace(/'/g, "'\\''")}'`).join('\n');
-  await fs.writeFile(listFile, listContent);
+export async function concatScenes(scenePaths, outPath, durationsMs = []) {
+  const transitionSec = 0.25;
   return new Promise((resolve, reject) => {
-    ffmpeg()
-      .input(listFile)
-      .inputOptions(['-f concat', '-safe 0'])
-      .outputOptions(['-c copy'])
+    let cmd = ffmpeg();
+    for (const scenePath of scenePaths) cmd = cmd.input(scenePath);
+
+    const filters = [];
+    for (let i = 0; i < scenePaths.length; i++) {
+      const tail = i < scenePaths.length - 1 ? `,tpad=stop_mode=clone:stop_duration=${transitionSec}` : '';
+      filters.push(`[${i}:v]fps=30,format=yuv420p,setpts=PTS-STARTPTS${tail}[s${i}]`);
+    }
+
+    let current = 's0';
+    let cumulativeSec = Math.max(0.5, (durationsMs[0] || 500) / 1000);
+    for (let i = 1; i < scenePaths.length; i++) {
+      const next = `x${i}`;
+      filters.push(
+        `[${current}][s${i}]xfade=transition=fade:duration=${transitionSec}:offset=${cumulativeSec.toFixed(3)}[${next}]`
+      );
+      current = next;
+      cumulativeSec += Math.max(0.5, (durationsMs[i] || 500) / 1000);
+    }
+
+    cmd
+      .complexFilter(filters.join(';'), current)
+      .outputOptions([
+        '-c:v libx264',
+        '-preset medium',
+        '-crf 18',
+        '-tune animation',
+        '-profile:v high',
+        '-pix_fmt yuv420p',
+        '-r 30',
+        `-t ${cumulativeSec.toFixed(3)}`,
+        '-movflags +faststart',
+        '-y',
+      ])
       .output(outPath)
-      .on('end', async () => { try { await fs.unlink(listFile); } catch {} resolve(outPath); })
+      .on('end', () => resolve(outPath))
       .on('error', reject)
       .run();
   });

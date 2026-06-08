@@ -42,7 +42,18 @@ const VALID_HEX = /^#([0-9a-fA-F]{3}){1,2}$/;
 
 function safeStr(v, max = 80) {
   if (typeof v !== 'string') return '';
-  return v.slice(0, max);
+  return v
+    .replace(/Ã—|×/g, 'x')
+    .replace(/Â²|²/g, '2')
+    .replace(/Â³|³/g, '3')
+    .replace(/â°|⁰/g, '0')
+    .replace(/â¹|¹/g, '1')
+    .replace(/[–—]/g, '-')
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, max);
 }
 
 function safeArray(v) { return Array.isArray(v) ? v : []; }
@@ -203,6 +214,58 @@ function fillGaps(scenes, totalMs) {
   return out.filter(s => s.end_ms > s.start_ms);
 }
 
+export function buildSpokenCaptions(scene, transcript) {
+  if (!Array.isArray(transcript) || !transcript.length) return [];
+  const words = transcript.filter(item =>
+    item &&
+    typeof item.word === 'string' &&
+    item.word.trim() &&
+    item.end_ms > scene.start_ms &&
+    item.start_ms < scene.end_ms
+  );
+  if (!words.length) return [];
+
+  const captions = [];
+  let group = [];
+  let chars = 0;
+
+  const flush = () => {
+    if (!group.length) return;
+    const first = group[0];
+    const last = group[group.length - 1];
+    captions.push({
+      text: group.map(item => item.word).join(' '),
+      start_ms: Math.max(0, first.start_ms - scene.start_ms),
+      end_ms: Math.min(scene.end_ms - scene.start_ms, last.end_ms - scene.start_ms + 140),
+    });
+    group = [];
+    chars = 0;
+  };
+
+  for (const word of words) {
+    const clean = word.word.trim();
+    const gap = group.length ? word.start_ms - group[group.length - 1].end_ms : 0;
+    const nextChars = chars + (group.length ? 1 : 0) + clean.length;
+    const sentenceEnd = /[.!?]["']?$/.test(clean);
+    if (group.length && (gap > 360 || nextChars > 34 || group.length >= 6)) flush();
+    group.push(word);
+    chars += (group.length > 1 ? 1 : 0) + clean.length;
+    if (sentenceEnd || group.length >= 6) flush();
+  }
+  flush();
+
+  return captions
+    .filter(caption => caption.end_ms > caption.start_ms)
+    .slice(0, 24);
+}
+
+function attachSpokenCaptions(scenes, transcript) {
+  return scenes.map(scene => ({
+    ...scene,
+    spoken_captions: buildSpokenCaptions(scene, transcript),
+  }));
+}
+
 function tryParse(text) {
   const cleaned = text.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
   try {
@@ -249,5 +312,5 @@ export async function planScenes({ transcript, script, totalMs, jobDir }) {
   }
 
   const validated = rawScenes.map((s, i) => validateScene(s, i, totalMs));
-  return fillGaps(validated, totalMs);
+  return attachSpokenCaptions(fillGaps(validated, totalMs), transcript);
 }

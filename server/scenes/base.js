@@ -50,7 +50,7 @@ export class FilterBuilder {
     } else {
       cSpec = colors.map((c, i) => `c${i}=0x${c}`).join(':') + `:nb_colors=${colors.length}`;
     }
-    this.clauses.push(`gradients=size=${W}x${H}:${cSpec}:x0=0:y0=0:x1=${W}:y1=${H}:duration=${dur}[${out}]`);
+    this.clauses.push(`gradients=size=${W}x${H}:r=${FPS}:${cSpec}:x0=0:y0=0:x1=${W}:y1=${H}:duration=${dur}[${out}]`);
     return out;
   }
 
@@ -135,13 +135,15 @@ export class FilterBuilder {
     const prepared = this.next();
     const final = this.next();
     this.clauses.push(
-      `[${inputLabel}]format=rgba,scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2:color=0x00000000[${fmt}]`
+      `[${inputLabel}]fps=${FPS},format=rgba,scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h}[${fmt}]`
     );
-    let scaleExpr = '1';
-    if (scaleIn) {
-      scaleExpr = `if(lt(t\\,${scaleInDur.toFixed(2)})\\,1.12-0.12*t/${scaleInDur.toFixed(2)}\\,1.0)`;
-    }
-    this.clauses.push(`[${fmt}]scale=iw*${scaleExpr}:ih*${scaleExpr}:eval=frame[${sized}]`);
+    // Keep the output dimensions fixed. Per-frame resizes introduce visible
+    // one-pixel jumps after FFmpeg rounds the scale and crop coordinates.
+    const scaleExpr = '1';
+    this.clauses.push(
+      `[${fmt}]scale='trunc(${w}*(${scaleExpr})/2)*2':'trunc(${h}*(${scaleExpr})/2)*2':eval=frame,` +
+      `crop=${w}:${h}:(iw-${w})/2:(ih-${h})/2[${sized}]`
+    );
     if (blur > 0) {
       this.clauses.push(`[${sized}]boxblur=${blur}:${Math.max(1, Math.round(blur / 4))}[${prepared}]`);
     } else {
@@ -156,8 +158,8 @@ export class FilterBuilder {
     let posX = x;
     let posY = y;
     if (float) {
-      posX = typeof x === 'string' ? x : `${x}+18*sin(2*PI*t/${floatDur.toFixed(2)})`;
-      posY = typeof y === 'string' ? y : `${y}+12*cos(2*PI*t/${floatDur.toFixed(2)})`;
+      posX = typeof x === 'string' ? x : `trunc(${x}+4*sin(2*PI*t/${floatDur.toFixed(2)}))`;
+      posY = typeof y === 'string' ? y : `trunc(${y}+3*cos(2*PI*t/${floatDur.toFixed(2)}))`;
     }
     this.clauses.push(`[${input}][${opacified}]overlay=x=${posX}:y=${posY}[${final}]`);
     return final;
@@ -216,13 +218,14 @@ export class FilterBuilder {
       borderColor = '#000000',
       startAt = null,
       endAt = null,
+      fadeInDur = 0.32,
       extraKVs = {},
     } = opts;
 
     const safeFontPath = safeFont(font);
     const parts = [
       `text='${escapeDrawtext(text)}'`,
-      `fontcolor=${color}@${alpha}`,
+      `fontcolor=${color}`,
       `fontsize=${size}`,
     ];
     if (safeFontPath) parts.push(`fontfile='${safeFontPath}'`);
@@ -232,35 +235,23 @@ export class FilterBuilder {
       parts.push(`borderw=${borderW}`);
       parts.push(`bordercolor=${borderColor}`);
     }
+    if (startAt != null && fadeInDur > 0) {
+      const d = Math.max(0.05, fadeInDur).toFixed(2);
+      const fade = `min(max((t-${startAt})/${d}\\,0)\\,1)`;
+      parts.push(`alpha='${alpha}*${fade}'`);
+    } else if (alpha < 1) {
+      parts.push(`alpha=${alpha}`);
+    }
     if (enable) parts.push(`enable='${enable}'`);
-    else if (startAt != null && endAt != null) parts.push(`enable='between(t,${startAt},${endAt})'`);
+    else if (startAt != null && endAt != null) parts.push(`enable='gte(t,${startAt})'`);
     for (const [k, v] of Object.entries(extraKVs)) parts.push(`${k}=${v}`);
     this.clauses.push(`[${input}]drawtext=${parts.join(':')}[${out}]`);
     return out;
   }
 
   addNeonText(input, out, opts) {
-    const { color = '#FFFFFF', glowColor = null, size = 100, layers = 3 } = opts;
-    const finalColor = glowColor || color;
-    let cur = input;
-    const fontOffsets = [3, 2, 1];
-    const borderSizes = [8, 4, 2];
-    const alphas = [0.10, 0.18, 0.32];
-    for (let i = 0; i < layers; i++) {
-      const inter = this.next();
-      const partOpts = {
-        ...opts,
-        color: finalColor,
-        size: size + fontOffsets[i],
-        alpha: alphas[i],
-        borderW: borderSizes[i],
-        borderColor: finalColor,
-      };
-      cur = this.addText(cur, inter, partOpts);
-    }
-    const main = this.next();
-    cur = this.addText(cur, main, { ...opts, color, size, alpha: 1 });
-    return main;
+    const { color = '#FFFFFF', size = 100 } = opts;
+    return this.addText(input, out, { ...opts, color, size, alpha: 1, borderW: 0 });
   }
 
   addGradientTextFake(input, out, { text, x, y, font, size, colors, enable = null, startAt = null, endAt = null }) {
@@ -293,7 +284,7 @@ export class FilterBuilder {
     const c = hexNoHash(color);
     const bc = hexNoHash(borderColor);
     const lbl = this.next();
-    const e = enable || (startAt != null && endAt != null ? `enable='between(t,${startAt},${endAt})'` : '');
+    const e = enable || (startAt != null && endAt != null ? `enable='gte(t,${startAt})'` : '');
     this.clauses.push(
       `color=c=0x00000000:s=${W}x${H}:d=10,format=rgba[bg${lbl}];` +
       `[bg${lbl}]drawbox=x=${x}:y=${y}:w=${w}:h=${h}:color=${color}@${alpha}:t=fill,` +
@@ -340,20 +331,16 @@ export class FilterBuilder {
     const fmt = this.next();
     const scaled = this.next();
     const rotated = this.next();
+    const framed = this.next();
     const final = this.next();
 
     this.clauses.push(
       `[${inputLabel}]format=rgba,scale=${box}:${box}:force_original_aspect_ratio=decrease,pad=${box}:${box}:(ow-iw)/2:(oh-ih)/2:color=0x00000000[${fmt}]`
     );
 
-    let scaleExpr = '1';
-    if (scaleIn) {
-      scaleExpr = `if(lt(t\\,${scaleInDur.toFixed(2)})\\,1.6-0.6*t/${scaleInDur.toFixed(2)}\\,1.0)`;
-    } else if (pulse) {
-      scaleExpr = `if(lt(sin(2*PI*t*1.2)\\,0)\\,0.92\\,1.08)`;
-    } else if (float) {
-      scaleExpr = `1+0.04*sin(2*PI*t/3)`;
-    }
+    // Icons stay at a fixed raster size; opacity and staging provide motion
+    // without the shimmer caused by resizing a stroked PNG every frame.
+    const scaleExpr = '1';
     this.clauses.push(
       `[${fmt}]scale=iw*${scaleExpr}:ih*${scaleExpr}:eval=frame[${scaled}]`
     );
@@ -364,28 +351,31 @@ export class FilterBuilder {
       this.clauses.push(`[${scaled}]copy[${rotated}]`);
     }
 
+    const frameSize = Math.ceil(box * 1.12 / 2) * 2;
+    this.clauses.push(
+      `color=c=0x00000000:s=${frameSize}x${frameSize}:r=${FPS}:d=10,format=rgba[iconbg${framed}];` +
+      `[iconbg${framed}][${rotated}]overlay=x=(W-w)/2:y=(H-h)/2[${framed}]`
+    );
+
     let posX = x, posY = y;
+    const frameOffset = Math.round((frameSize - box) / 2);
+    posX = typeof posX === 'string' ? `(${posX})-${frameOffset}` : posX - frameOffset;
+    posY = typeof posY === 'string' ? `(${posY})-${frameOffset}` : posY - frameOffset;
     if (float) {
-      posX = typeof x === 'string' ? x : `${x}+20*sin(2*PI*t/3)`;
-      posY = typeof y === 'string' ? y : `${y}+15*cos(2*PI*t/3)`;
+      posX = `trunc(${posX}+4*sin(2*PI*t/3.5))`;
+      posY = `trunc(${posY}+3*cos(2*PI*t/3.5))`;
     }
 
     const enabled = enable ? `:enable='${enable}'` : '';
     this.clauses.push(
-      `[${input}][${rotated}]overlay=x=${posX}:y=${posY}${enabled}[${final}]`
+      `[${input}][${framed}]overlay=x=${posX}:y=${posY}${enabled}[${final}]`
     );
     return final;
   }
 
-  addCameraZoom(input, out, { from = 1.0, to = 1.06, dur = 4 }) {
-    const zoomed = this.next();
-    const expr = `${from}+(${to - from})*min(t/${dur.toFixed(2)}\\,1)`;
-    this.clauses.push(
-      `[${input}]scale='trunc(iw*(${expr})/2)*2':'trunc(ih*(${expr})/2)*2':eval=frame,` +
-      `crop=${W}:${H}:(iw-${W})/2:(ih-${H})/2[${zoomed}]`
-    );
+  addCameraZoom(input, out, { from = 1.0, to = 1.025, dur = 4 }) {
     const final = this.next();
-    this.clauses.push(`[${zoomed}]copy[${final}]`);
+    this.clauses.push(`[${input}]copy[${final}]`);
     return final;
   }
 
@@ -424,21 +414,29 @@ export function wrapWords(text, maxChars = 24, maxLines = 4) {
   const words = splitWords(text);
   const lines = [];
   let line = '';
-  for (const word of words) {
+  for (let i = 0; i < words.length; i++) {
+    const word = words[i];
     const candidate = line ? `${line} ${word}` : word;
-    if (candidate.length <= maxChars || !line) {
+    if (candidate.length <= maxChars) {
       line = candidate;
       continue;
     }
-    lines.push(line);
-    line = word;
-    if (lines.length === maxLines - 1) break;
+    if (!line) {
+      line = word.slice(0, maxChars);
+      continue;
+    }
+    if (lines.length < maxLines - 1) {
+      lines.push(line);
+      line = word;
+      continue;
+    }
+    const remaining = [line, ...words.slice(i)].join(' ');
+    line = remaining.length > maxChars
+      ? `${remaining.slice(0, Math.max(1, maxChars - 3)).trim()}...`
+      : remaining;
+    break;
   }
-  if (line && lines.length < maxLines) {
-    const consumed = lines.join(' ').split(/\s+/).filter(Boolean).length;
-    const remaining = words.slice(consumed).join(' ');
-    lines.push(remaining.length > maxChars + 8 ? `${remaining.slice(0, maxChars + 5).trim()}...` : remaining);
-  }
+  if (line && lines.length < maxLines) lines.push(line);
   return lines.slice(0, maxLines);
 }
 

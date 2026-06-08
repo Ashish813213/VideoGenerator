@@ -9,8 +9,12 @@ jobs/
 output/
 frames/
 
-assets/
+assets/*
 !assets/.gitkeep
+!assets/fonts/
+assets/fonts/*
+!assets/fonts/*.ttf
+!assets/fonts/LICENSE-*.txt
 
   Session   Reformat PRD, SystemDesign, and TDD docs
   Continue  opencode -s ses_16cc945adffelBU7hoGJoCkLzB
