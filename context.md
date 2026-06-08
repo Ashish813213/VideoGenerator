@@ -1,12 +1,13 @@
 # VideoGen Project Context
 
-Last verified: June 5, 2026
+Last verified: June 8, 2026
 
 ## Product Goal
 
 VideoGen is a local, no-auth web app that converts a text script into a narrated
 1920x1080 MP4. It uses Gemini for narration and planning, Lucide/stock assets for
-visuals, and FFmpeg for scene rendering, concatenation, and audio muxing.
+visuals, bundled Google Fonts for role-based typography, and FFmpeg for scene
+rendering, concatenation, and audio muxing.
 
 Primary flow:
 
@@ -48,7 +49,7 @@ jobs/{jobId}/                 audio, plans, scene clips, video-only MP4
 output/{jobId}.mp4            final muxed video
 assets/icons/                 generated Lucide PNG cache
 assets/images/                stock image cache
-assets/fonts/                 bundled display/body fonts
+assets/fonts/                 bundled role-based typography and licenses
 ```
 
 The server exposes:
@@ -222,18 +223,18 @@ or billing/quota is increased, the timestamp fallback will be used.
 The renderer previously changed image and icon frame dimensions on every frame
 while keeping a fixed overlay origin. This produced visible edge warping,
 top-left anchoring, abrupt icon size jumps, and occasional nearly empty frames
-between scenes.
+between scenes. Dynamic full-frame zoom and per-frame raster resizing were later
+removed because they still created shimmer in encoded output.
 
 The current renderer now:
 
 - renders stock images into a fixed-size cover crop before animating them
-- applies center-anchored smoothstep zoom instead of linear 12% resizing
-- limits image drift to a subtle 6 x 4 pixel float
-- uses continuous 2.5% icon pulses instead of binary 8% size jumps
+- keeps stock image and icon raster dimensions fixed throughout a scene
+- uses opacity, staging, and restrained position changes instead of raster zoom
 - places animated icons inside a fixed transparent frame
-- uses eased, restrained camera zooms
+- avoids dynamic full-frame camera scaling
 - keeps displayed text and cards alive through the final scene frame
-- limits display headlines to five words and fits them to the layout width
+- wraps and scales display headlines to their available layout region
 - crossfades scene clips for 250 ms using cloned tail frames
 - preserves the original summed scene duration during crossfades
 - renders gradients and final clips consistently at 30 fps
@@ -247,6 +248,52 @@ black stat scene also rendered successfully after the stat expression fix.
 The generated visual quality can still be basic when Gemini planning is blocked
 by quota. Smooth rendering cannot replace the richer scene specifications that
 V10 would normally produce.
+
+## Reference-Style Layout and Typography Update
+
+The June 8 review used `D:\Mr.Ashish\Miscelleonous\Refernce Vid.mp4` as the
+visual reference. The desired style uses clear composition zones, concise
+headlines, fixed lower-third narration captions, and typography changes based on
+the role of each beat.
+
+The current scene renderer now:
+
+- derives the available text region from the actual stock-image rectangle
+- places image and text in separate columns with a fixed safety gutter
+- forces image-bearing center/floating scenes into a stable split composition
+- wraps long titles and reduces font size until they fit their safe region
+- prevents callout cards and icons from competing with an image for the same area
+- suppresses persistent subtitles when speech-timed captions are available
+- displays each spoken phrase only while that phrase is being narrated
+- wraps captions to at most two lines in one highlighted lower-third panel
+- uses one panel behind the complete caption instead of one box per text line
+
+`server/planner.js` builds `spoken_captions` from transcript word timestamps and
+attaches them to planned scenes, including cached plans. When timestamps are
+estimated because STT quota is unavailable, the captions inherit that approximate
+alignment.
+
+Typography roles are defined in `server/design.js`:
+
+- Anton for bold/statistical emphasis
+- Luckiest Guy for playful visual metaphors and callouts
+- Permanent Marker for handwritten beat labels and summaries
+- Space Grotesk for general scene titles and body composition
+- Inter Bold for narration captions
+
+The portable font files and their licenses are stored under `assets/fonts/`.
+The MP4 encoder uses H.264 High profile, CRF 18, the medium preset, animation
+tuning, `yuv420p`, and 30 fps.
+
+Verification:
+
+- A long image-bearing callout was rendered as
+  `jobs/_collision_check/scene_000.mp4`.
+- The title wrapped entirely inside the left text column.
+- The image remained unobstructed in the right visual column.
+- A long spoken caption wrapped into one centered highlighted panel.
+- The verified clip is 1920x1080, H.264 High, `yuv420p`, 30 fps, and 4.00 seconds.
+- `node --check server/scenes/index.js` and `git diff --check` passed.
 
 ### P1 - Gemini planning quota can bypass V10
 
@@ -286,13 +333,16 @@ update and must not be reverted casually.
 
 Files changed during the TTS and visual-render investigation:
 
+- `.gitignore`
 - `server/tts.js`
 - `server/render.js`
 - `server/assets.js`
 - `server/design.js`
+- `server/planner.js`
 - `server/scenes/base.js`
 - `server/scenes/index.js`
 - `server/planning/direct.js`
+- `assets/fonts/`
 - `context.md`
 
 Runtime logs currently present:
@@ -302,9 +352,9 @@ Runtime logs currently present:
 
 ## Recommended Work Order
 
-1. Run a short end-to-end job and verify `jobs/{id}/audio.wav`.
-2. Confirm narration duration and final MP4 duration are close.
-3. Check generated hero/process/summary scenes with real stock assets.
+1. Run a complete video job with several image-bearing scene types.
+2. Review title/image separation and caption timing in the final muxed MP4.
+3. Confirm narration duration and final MP4 duration remain close.
 4. Make fallback/degraded rendering visible in job status.
 5. Persist completed job metadata and refresh the remaining docs.
 

@@ -171,7 +171,11 @@ function addTextBlock(fb, input, {
   alpha = 1,
   accent = null,
   startAt = 0,
+  endAt = 999,
   stagger = 0.06,
+  fadeInDur = 0.32,
+  enable = null,
+  extraKVs = {},
 }) {
   const layout = fitTextBlock(text, { maxWidth: width, maxHeight, maxSize, minSize, maxLines, lineHeight });
   let cur = input;
@@ -187,7 +191,10 @@ function addTextBlock(fb, input, {
       alpha,
       size: layout.size,
       startAt: startAt + i * stagger,
-      endAt: 999,
+      endAt,
+      fadeInDur,
+      enable,
+      extraKVs,
     };
     cur = accent
       ? fb.addNeonText(cur, next, { ...opts, glowColor: accent })
@@ -202,30 +209,74 @@ function titleRegion(layout) {
   return { x: 180, y: 500, width: 1560, align: 'center' };
 }
 
+function imageTextRegion(box) {
+  const gutter = 80;
+  const edge = 96;
+  const imageOnRight = box.x + box.w / 2 >= W / 2;
+  if (imageOnRight) {
+    return {
+      x: edge,
+      y: 390,
+      width: Math.max(420, box.x - gutter - edge),
+      align: 'left',
+    };
+  }
+  const x = box.x + box.w + gutter;
+  return {
+    x,
+    y: 390,
+    width: Math.max(420, W - edge - x),
+    align: 'left',
+  };
+}
+
 function addSpokenCaptions(fb, input, scene) {
   const captions = Array.isArray(scene.spoken_captions) ? scene.spoken_captions : [];
   let cur = input;
   for (const caption of captions) {
     const start = Math.max(0, Number(caption.start_ms || 0) / 1000);
     const end = Math.max(start + 0.08, Number(caption.end_ms || 0) / 1000);
-    const next = fb.next();
-    cur = fb.addText(cur, next, {
+    const text = normalizeInlineText(caption.text);
+    const layout = fitTextBlock(text, {
+      maxWidth: 1280,
+      maxHeight: 120,
+      maxSize: 42,
+      minSize: 30,
+      maxLines: 2,
+      lineHeight: 1.18,
+    });
+    const widest = Math.max(...layout.lines.map(line => line.length * layout.size * 0.56), 320);
+    const panelW = Math.min(1360, Math.max(420, Math.ceil(widest + 64)));
+    const panelH = layout.height + 30;
+    const panelX = Math.round((W - panelW) / 2);
+    const panelY = 1000 - panelH;
+    const panel = fb.next();
+    fb.clauses.push(
+      `[${cur}]drawbox=x=${panelX}:y=${panelY}:w=${panelW}:h=${panelH}:` +
+      `color=${scene.accent_color || '#3B82F6'}@0.90:t=fill:` +
+      `enable='between(t,${start.toFixed(3)},${end.toFixed(3)})'[${panel}]`
+    );
+    cur = panel;
+    const captionBlock = addTextBlock(fb, cur, {
       text: normalizeInlineText(caption.text),
-      x: '(W-text_w)/2',
-      y: 930,
+      x: panelX + 32,
+      y: panelY + 15,
+      width: panelW - 64,
+      maxHeight: 120,
+      maxSize: 42,
+      minSize: 30,
+      maxLines: 2,
+      lineHeight: 1.18,
+      align: 'center',
       font: fontFor('bodyBold'),
       color: '#FFFFFF',
-      size: 42,
       startAt: start,
       endAt: end,
+      stagger: 0,
       fadeInDur: 0.12,
       enable: `between(t,${start.toFixed(3)},${end.toFixed(3)})`,
-      extraKVs: {
-        box: 1,
-        boxcolor: `${scene.accent_color || '#3B82F6'}@0.88`,
-        boxborderw: 18,
-      },
     });
+    cur = captionBlock.output;
   }
   return cur;
 }
@@ -258,11 +309,9 @@ function positionForLayout(layout, kind, scene) {
 function imageBoxForLayout(layout) {
   if (layout === 'left') return { x: 1040, y: 210, w: 760, h: 560 };
   if (layout === 'right') return { x: 120, y: 210, w: 760, h: 560 };
-  if (layout === 'top') return { x: 560, y: 250, w: 800, h: 420 };
-  if (layout === 'bottom') return { x: 560, y: 180, w: 800, h: 420 };
   if (layout === 'split') return { x: 960, y: 220, w: 780, h: 540 };
   if (layout === 'grid') return { x: 1020, y: 220, w: 660, h: 520 };
-  return { x: 980, y: 230, w: 700, h: 500 };
+  return { x: 1040, y: 210, w: 760, h: 560 };
 }
 
 function renderHero(scene, ctx) {
@@ -270,11 +319,13 @@ function renderHero(scene, ctx) {
   const palette = ctx.palette;
   const fb = new FilterBuilder();
   let cur = fb.addGradientBg({ gradient: gradientFor(scene, palette), dur });
+  let imageBox = null;
 
   cur = addDecorations(fb, cur, scene, palette);
 
   if (ctx.imagePath) {
     const box = imageBoxForLayout(scene.layout);
+    imageBox = box;
     cur = fb.addCard(cur, fb.next(), {
       x: box.x - 24,
       y: box.y - 24,
@@ -315,15 +366,15 @@ function renderHero(scene, ctx) {
 
   if (scene.title) {
     const title = displayTitle(scene.title);
-    const region = titleRegion(ctx.imagePath && scene.layout === 'center' ? 'left' : scene.layout);
+    const region = imageBox ? imageTextRegion(imageBox) : titleRegion(scene.layout);
     const titleBlock = addTextBlock(fb, cur, {
       text: title,
       x: region.x,
       y: region.y,
       width: region.width,
       maxHeight: 230,
-      maxSize: 104,
-      minSize: 58,
+      maxSize: imageBox ? 84 : 104,
+      minSize: imageBox ? 42 : 58,
       maxLines: 3,
       align: region.align,
       font: titleFontFor(scene),
@@ -365,10 +416,12 @@ function renderDefinition(scene, ctx) {
   const palette = ctx.palette;
   const fb = new FilterBuilder();
   let cur = fb.addGradientBg({ gradient: gradientFor(scene, palette), dur });
+  let imageBox = null;
   cur = addDecorations(fb, cur, scene, palette);
 
   if (ctx.imagePath) {
     const box = imageBoxForLayout(scene.layout);
+    imageBox = box;
     cur = fb.addCard(cur, fb.next(), {
       x: box.x - 18,
       y: box.y - 18,
@@ -412,15 +465,15 @@ function renderDefinition(scene, ctx) {
 
   if (scene.title) {
     const title = displayTitle(scene.title);
-    const region = titleRegion(ctx.imagePath && scene.layout === 'center' ? 'left' : scene.layout);
+    const region = imageBox ? imageTextRegion(imageBox) : titleRegion(scene.layout);
     const titleBlock = addTextBlock(fb, cur, {
       text: title,
       x: region.x,
       y: region.y,
       width: region.width,
       maxHeight: 210,
-      maxSize: 92,
-      minSize: 52,
+      maxSize: imageBox ? 78 : 92,
+      minSize: imageBox ? 40 : 52,
       maxLines: 2,
       align: region.align,
       font: titleFontFor(scene),
@@ -461,10 +514,12 @@ function renderCallout(scene, ctx) {
   const palette = ctx.palette;
   const fb = new FilterBuilder();
   let cur = fb.addGradientBg({ gradient: gradientFor(scene, palette), dur });
+  let imageBox = null;
   cur = addDecorations(fb, cur, scene, palette);
 
   if (ctx.imagePath) {
     const box = imageBoxForLayout(scene.layout);
+    imageBox = box;
     cur = fb.addCard(cur, fb.next(), {
       x: box.x - 18,
       y: box.y - 18,
@@ -493,13 +548,15 @@ function renderCallout(scene, ctx) {
   const cardY = Math.round(H * 0.18);
   const cardW = Math.round(W * 0.76);
   const cardH = Math.round(H * 0.64);
-  cur = fb.addCard(cur, fb.next(), {
-    x: cardX, y: cardY, w: cardW, h: cardH,
-    color: '#FFFFFF', alpha: 0.04,
-    borderColor: '#FFFFFF', borderAlpha: 0.14, borderW: 1,
-  });
+  if (!imageBox) {
+    cur = fb.addCard(cur, fb.next(), {
+      x: cardX, y: cardY, w: cardW, h: cardH,
+      color: '#FFFFFF', alpha: 0.04,
+      borderColor: '#FFFFFF', borderAlpha: 0.14, borderW: 1,
+    });
+  }
 
-  if (ctx.iconPath) {
+  if (!imageBox && ctx.iconPath) {
     const iconSize = 180;
     const next = fb.next();
     cur = fb.addIcon(cur, next, {
@@ -514,16 +571,19 @@ function renderCallout(scene, ctx) {
 
   if (scene.title) {
     const title = displayTitle(scene.title);
+    const region = imageBox
+      ? imageTextRegion(imageBox)
+      : { x: cardX + 100, y: Math.round(H * 0.52), width: cardW - 200, align: 'center' };
     const titleBlock = addTextBlock(fb, cur, {
       text: title,
-      x: cardX + 100,
-      y: Math.round(H * 0.52),
-      width: cardW - 200,
+      x: region.x,
+      y: region.y,
+      width: region.width,
       maxHeight: 170,
-      maxSize: 88,
-      minSize: 50,
-      maxLines: 2,
-      align: 'center',
+      maxSize: imageBox ? 76 : 88,
+      minSize: imageBox ? 40 : 50,
+      maxLines: 3,
+      align: region.align,
       font: titleFontFor(scene),
       color: scene.text_color,
       accent: scene.accent_color,
@@ -533,15 +593,15 @@ function renderCallout(scene, ctx) {
     if (scene.subtitle && !scene.spoken_captions?.length) {
       const subtitleBlock = addTextBlock(fb, cur, {
         text: scene.subtitle,
-        x: cardX + 160,
-        y: Math.round(H * 0.70),
-        width: cardW - 320,
+        x: region.x,
+        y: region.y + titleBlock.layout.height + 28,
+        width: region.width,
         maxHeight: 120,
         maxSize: 38,
         minSize: 28,
         maxLines: 2,
         lineHeight: 1.3,
-        align: 'center',
+        align: region.align,
         font: fontFor('body'),
         color: scene.text_color,
         alpha: 0.72,
