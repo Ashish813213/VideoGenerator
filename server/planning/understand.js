@@ -10,15 +10,16 @@ Decompose the user's script into story beats tied to the transcript timestamps. 
 
 RULES
 
-1. BEAT COUNT — produce exactly 6 to 8 story_beats. The video is short, every beat must earn its place. If the script is dense, condense; never pad with empty beats.
+1. BEAT COUNT — produce 7 to 13 story_beats. Use 7-8 beats below 60 seconds, 9-10 beats from 60-100 seconds, and 11-13 beats for longer tutorials. Every beat must earn its place; never pad with empty beats.
 
-2. BEAT TIMING — most beats should be 3000–6000 ms. The HERO and SUMMARY beats can be 5000–7000 ms. A beat never exceeds 8000 ms; if it would, the idea is too big and must be split.
+2. BEAT TIMING — most beats should be 4000–12000 ms. The HERO and SUMMARY beats can be shorter. A beat never exceeds 15000 ms; if it would, the idea is too big and must be split.
 
 3. BEAT STRUCTURE — every story_beat has:
    - index (integer, 0-based)
    - start_ms and end_ms (integers, contiguous, non-overlapping, cover 0 to total_ms)
    - intent (a short verb-phrase, 3–8 words, describing the VISUAL STORY TURN the beat performs — NOT a content summary)
    - beat_role (one of: "hook", "definition", "process", "scale", "surprise", "consequence", "summary")
+   - teaching_stage (one of: "hook", "concept", "visualization", "analogy", "code", "architecture", "training", "formula", "prediction", "summary")
    - speaker_cue (a short phrase the narrator says, ≤ 15 words, pulled or paraphrased from the script)
 
 4. INTENT IS A VISUAL TURN, NOT A SUMMARY. The intent describes the beat's role in the VISUAL story, not what the narrator says. Examples of GOOD intents:
@@ -66,7 +67,7 @@ Schema:
     { "term": "...", "definition": "...", "importance": "foundational" | "explanatory" | "memorable" | "surprising" }
   ],
   "story_beats": [
-    { "index": 0, "start_ms": 0, "end_ms": 4000, "intent": "short verb phrase", "beat_role": "hook", "speaker_cue": "..." }
+    { "index": 0, "start_ms": 0, "end_ms": 4000, "intent": "short verb phrase", "beat_role": "hook", "teaching_stage": "hook", "speaker_cue": "..." }
   ],
   "key_takeaways": [
     "...",
@@ -96,36 +97,84 @@ function clampImportance(s) {
 }
 
 const VALID_BEAT_ROLES = new Set(['hook', 'definition', 'process', 'scale', 'surprise', 'consequence', 'summary']);
+const VALID_TEACHING_STAGES = new Set([
+  'hook', 'concept', 'visualization', 'analogy', 'code', 'architecture',
+  'training', 'formula', 'prediction', 'process', 'contrast', 'timeline',
+  'scale', 'evidence', 'consequence', 'summary',
+]);
 function clampBeatRole(s) {
   return VALID_BEAT_ROLES.has(s) ? s : null;
 }
 
-function heuristicContent(script, totalMs) {
+function clampTeachingStage(s, beatRole) {
+  if (VALID_TEACHING_STAGES.has(s)) return s;
+  const fallback = {
+    hook: 'hook',
+    definition: 'concept',
+    process: 'visualization',
+    scale: 'scale',
+    surprise: 'evidence',
+    consequence: 'consequence',
+    summary: 'summary',
+  };
+  return fallback[beatRole] || 'concept';
+}
+
+export function heuristicContent(script, totalMs) {
   const words = script.trim().split(/\s+/).filter(Boolean);
   const wc = words.length;
-  const targetBeats = 7;
-  const perBeat = totalMs / targetBeats;
+  const targetBeats = totalMs >= 100000 ? 13 : totalMs >= 60000 ? 10 : 8;
   const sentences = script.split(/(?<=[.!?])\s+/).filter(Boolean);
-  const arc = 'hook → definition → process → scale → surprise → consequence → summary';
-  const beatPlan = [
-    { role: 'hook', intent: 'Hook with a striking framing' },
-    { role: 'definition', intent: 'Define the core concept' },
-    { role: 'process', intent: 'Walk through the key process' },
-    { role: 'scale', intent: 'Reveal the surprising scale' },
-    { role: 'surprise', intent: 'Drop a surprising fact' },
-    { role: 'consequence', intent: 'Show the consequence of failure' },
-    { role: 'summary', intent: 'Close with the takeaway' },
+  const text = script.toLowerCase();
+  const hasCode = /\b(code|coding|python|javascript|typescript|java|function|class|api|library|framework|programming)\b/.test(text);
+  const hasFormula = /[=+*/^]|\b(equation|formula|calculate|mathematics|physics|probability|percent|percentage|ratio|interest rate)\b/.test(text);
+  const hasArchitecture = /\b(system|architecture|network|pipeline|layer|component|infrastructure|workflow|database|server)\b/.test(text);
+  const hasPrediction = /\b(predict|predicts|predicted|predicting|prediction|forecast|forecasts|forecasting|classify|classification|inference|model output|diagnosis)\b/.test(text);
+  const timelineSignals = text.match(/\b(history|historical|century|centuries|year|years|era|evolved|timeline|first|origin|founded|ancient|empire|republic|later|eventually)\b/g) || [];
+  const uniqueTimelineSignals = new Set(timelineSignals);
+  const hasExplicitDate = /\b(?:1[0-9]{3}|20[0-9]{2})\b/.test(text);
+  const hasTimeline = hasExplicitDate || uniqueTimelineSignals.size >= 3;
+  const hasComparison = /\b(versus| vs |compare|difference|before|after|better|worse|unlike)\b/.test(` ${text} `);
+  const hasNumbers = /\d/.test(script);
+
+  const fullBeatPlan = [
+    { role: 'hook', stage: 'hook', intent: 'Hook with a striking framing' },
+    { role: 'definition', stage: 'concept', intent: 'Define the core concept' },
+    { role: 'process', stage: hasTimeline ? 'timeline' : 'visualization', intent: hasTimeline ? 'Trace the key progression' : 'Visualize the central mechanism' },
+    { role: 'scale', stage: 'analogy', intent: 'Ground the concept with an analogy' },
+    { role: 'process', stage: hasComparison ? 'contrast' : 'process', intent: hasComparison ? 'Contrast the competing ideas' : 'Walk through the key process' },
+    { role: 'surprise', stage: hasNumbers ? 'evidence' : 'visualization', intent: hasNumbers ? 'Reveal the strongest evidence' : 'Reveal the hidden detail' },
+    ...(hasCode ? [{ role: 'process', stage: 'code', intent: 'Translate the idea into code' }] : []),
+    ...(hasArchitecture ? [{ role: 'process', stage: 'architecture', intent: 'Map the system architecture' }] : []),
+    ...(hasFormula ? [{ role: 'process', stage: 'formula', intent: 'Explain the governing formula' }] : []),
+    ...(hasPrediction ? [{ role: 'process', stage: 'prediction', intent: 'Trace the prediction path' }] : []),
+    { role: 'consequence', stage: 'consequence', intent: 'Show why the idea matters' },
+    { role: 'summary', stage: 'summary', intent: 'Close with the takeaway' },
   ];
-  const beats = beatPlan.slice(0, targetBeats).map((b, i) => {
+  const desired = Math.min(targetBeats, fullBeatPlan.length);
+  const priorityStages = new Set(['hook', 'concept', 'code', 'architecture', 'formula', 'prediction', 'consequence', 'summary']);
+  const selected = new Set();
+  fullBeatPlan.forEach((beat, index) => {
+    if (priorityStages.has(beat.stage)) selected.add(index);
+  });
+  for (let i = 0; selected.size < desired && i < fullBeatPlan.length; i++) selected.add(i);
+  const beatPlan = [...selected]
+    .sort((a, b) => a - b)
+    .slice(0, desired)
+    .map(index => fullBeatPlan[index]);
+  const arc = beatPlan.map(beat => beat.stage).join(' -> ');
+  const perBeat = totalMs / beatPlan.length;
+  const beats = beatPlan.map((b, i) => {
     const start = Math.round(i * perBeat);
     const end = Math.round((i + 1) * perBeat);
-    const speakerCue = sentences[Math.floor((i / targetBeats) * sentences.length)] || '';
+    const speakerCue = sentences[Math.floor((i / beatPlan.length) * sentences.length)] || '';
     return {
       index: i,
       start_ms: start,
       end_ms: end,
       intent: b.intent,
       beat_role: b.role,
+      teaching_stage: b.stage,
       speaker_cue: speakerCue.slice(0, 120),
     };
   });
@@ -182,12 +231,13 @@ function validateContent(parsed, totalMs) {
       end_ms: Math.max(0, safeInt(b?.end_ms, 0)),
       intent: typeof b?.intent === 'string' ? b.intent.slice(0, 80) : '',
       beat_role: clampBeatRole(b?.beat_role),
+      teaching_stage: clampTeachingStage(b?.teaching_stage, b?.beat_role),
       speaker_cue: typeof b?.speaker_cue === 'string' ? b.speaker_cue.slice(0, 200) : '',
     }))
     .filter(b => b.intent && b.beat_role)
     .sort((a, b) => a.start_ms - b.start_ms);
 
-  const beats = sorted.length >= 6 && sorted.length <= 8 ? sorted : null;
+  const beats = sorted.length >= 7 && sorted.length <= 13 ? sorted : null;
   if (!beats) return null;
 
   if (beats[0].beat_role !== 'hook') return null;

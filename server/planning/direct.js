@@ -8,6 +8,7 @@ const VALID_LAYOUTS = ['center', 'left', 'right', 'top', 'bottom', 'split', 'flo
 const VALID_SCENE_TYPES = [
   'hero', 'definition', 'callout', 'stat', 'process', 'timeline', 'comparison', 'summary',
   'visual_metaphor', 'network', 'data_flow', 'diagram', 'relationship',
+  'concept', 'code', 'architecture', 'formula', 'prediction', 'cinematic',
 ];
 const VALID_MOTIONS = ['zoom_in', 'zoom_out', 'pan_left', 'pan_right', 'pan_up', 'pan_down', 'static'];
 const VALID_TRANSITIONS = ['cut', 'fade', 'zoom_in', 'zoom_out', 'sweep_left', 'sweep_right', 'flash'];
@@ -22,6 +23,38 @@ const SCENE_TYPE_FOR_ROLE = {
   consequence: ['callout', 'comparison', 'visual_metaphor'],
   summary: ['summary'],
 };
+
+const SCENE_TYPE_FOR_STAGE = {
+  hook: 'hero',
+  concept: 'concept',
+  visualization: 'diagram',
+  analogy: 'visual_metaphor',
+  code: 'code',
+  architecture: 'architecture',
+  training: 'process',
+  formula: 'formula',
+  prediction: 'prediction',
+  process: 'process',
+  contrast: 'comparison',
+  timeline: 'timeline',
+  scale: 'stat',
+  evidence: 'stat',
+  consequence: 'callout',
+  summary: 'summary',
+};
+
+function isCinematicStory(content) {
+  const text = [
+    content.topic,
+    content.subtopic,
+    content.tone,
+    content.narrative_arc,
+    ...(content.story_beats || []).flatMap(beat => [beat.intent, beat.speaker_cue, beat.beat_role, beat.teaching_stage]),
+  ].join(' ').toLowerCase();
+  const storySignals = (text.match(/\b(scene|cinematic|film|movie|promo|promotional|advertisement|commercial|voiceover|camera|shot|walking|street|phone|app|volunteer|community|woman|arrival|montage|logo|tagline)\b/g) || []).length;
+  const explainerSignals = (text.match(/\b(explain|definition|formula|code|architecture|diagram|tutorial|parameter|matrix|equation)\b/g) || []).length;
+  return storySignals >= 4 && storySignals >= explainerSignals;
+}
 
 const SYSTEM_PROMPT = `You are the VIDEOGEN MASTER VISUAL DIRECTOR.
 
@@ -45,7 +78,20 @@ Every scene must answer:
 4. What visual metaphor improves understanding?
 
 SCENE SELECTION ENGINE
-Choose the most cinematic option from hero, definition, process, comparison, timeline, stat, callout, summary, visual_metaphor, network, data_flow, diagram, or relationship.
+Choose the most cinematic option from hero, definition, process, comparison, timeline, stat, callout, summary, visual_metaphor, network, data_flow, diagram, relationship, concept, code, architecture, formula, or prediction.
+
+DYNAMIC EXPLAINER ENGINE
+Derive the visual grammar from this script. Never force a programming, AI, tensor,
+formula, architecture, or prediction scene onto unrelated content.
+- concept: progressive representations of this topic's actual ideas
+- timeline: historical or chronological change
+- comparison: genuine contrasts, tradeoffs, before/after, or competing systems
+- process/data_flow: mechanisms and ordered transformations
+- code: only when the narration contains or teaches code
+- architecture: only for systems with real named components
+- formula: only when a real equation or quantitative rule is present
+- prediction: only when the subject actually produces a forecast, classification, or decision
+- stat: only when the narration provides a meaningful number
 
 VISUAL STORYTELLING RULES
 Think visually, not literally.
@@ -103,7 +149,13 @@ Schema:
       "transition_style": "fade",
       "decorative_elements": ["floating_circles", "particles"],
       "color_hint": "#RRGGBB",
-      "mood": "cinematic"
+      "mood": "cinematic",
+      "teaching_stage": "concept",
+      "concept_items": ["topic-specific label: concise meaning"],
+      "code_lines": [],
+      "layers": [],
+      "formula": "",
+      "flow_steps": []
     }
   ]
 }`;
@@ -126,11 +178,22 @@ function safeHex(v, fallback) {
   return /^#[0-9a-fA-F]{6}$/.test(v) ? v : fallback;
 }
 
+function sequenceLabels(text, fallback) {
+  const clauses = String(text || '')
+    .split(/\b(?:then|next|after|before|finally|eventually)\b|[,;:]/i)
+    .map(part => part.replace(/[^\w\s-]/g, ' ').replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .map(part => part.split(' ').slice(0, 4).join(' '))
+    .slice(0, 5);
+  return clauses.length >= 2 ? clauses : fallback;
+}
+
 function validateDirection(d, palette, beat, idx) {
   if (!d || typeof d !== 'object') return null;
   const allowedForRole = SCENE_TYPE_FOR_ROLE[beat.beat_role] || SCENE_TYPE_FOR_ROLE.definition;
+  const stageType = SCENE_TYPE_FOR_STAGE[beat.teaching_stage];
   const sceneType = clampIn(d.scene_type, VALID_SCENE_TYPES, null);
-  const finalSceneType = allowedForRole.includes(sceneType) ? sceneType : allowedForRole[0];
+  const finalSceneType = d.force_cinematic ? 'cinematic' : (stageType || sceneType || allowedForRole[0]);
 
   const layout = clampIn(d.layout_type ?? d.layout, VALID_LAYOUTS, 'center');
   const camera = clampIn(d.camera_motion, VALID_MOTIONS, 'static');
@@ -179,6 +242,7 @@ function validateDirection(d, palette, beat, idx) {
   return {
     intent_ref: beat.index ?? idx,
     beat_role: beat.beat_role,
+    teaching_stage: beat.teaching_stage || '',
     scene_type: finalSceneType,
     visual_goal: clampString(d.visual_goal, 200) || beat.intent,
     layout,
@@ -196,13 +260,36 @@ function validateDirection(d, palette, beat, idx) {
     colors: colors.length ? colors : [palette.primary, palette.secondary, palette.tertiary],
     emphasis_keywords: emphasisKeywords,
     mood: clampString(d.mood, 40) || 'engaging',
+    concept_items: clampArray(d.concept_items, 5).map(v => clampString(v, 60)).filter(Boolean),
+    code_lines: clampArray(d.code_lines, 8).map(v => clampString(v, 100)).filter(Boolean),
+    layers: clampArray(d.layers, 6).map(v => clampString(typeof v === 'object' ? v?.label : v, 40)).filter(Boolean),
+    formula: clampString(d.formula, 120),
+    flow_steps: clampArray(d.flow_steps, 6).map(v => clampString(typeof v === 'object' ? v?.label : v, 40)).filter(Boolean),
+    steps: clampArray(d.steps, 4).map(v => ({
+      label: clampString(typeof v === 'object' ? v?.label : v, 30),
+      icon: clampString(typeof v === 'object' ? v?.icon : '', 30),
+    })).filter(v => v.label),
+    milestones: clampArray(d.milestones, 5).map(v => ({
+      label: clampString(typeof v === 'object' ? v?.label : v, 40),
+      year: clampString(typeof v === 'object' ? v?.year : '', 12),
+    })).filter(v => v.label),
+    cinematic: d.cinematic && typeof d.cinematic === 'object' ? {
+      setting: clampString(d.cinematic.setting, 80),
+      shot: clampString(d.cinematic.shot, 80),
+      action: clampString(d.cinematic.action, 120),
+      emotion: clampString(d.cinematic.emotion, 40),
+      lighting: clampString(d.cinematic.lighting, 60),
+    } : null,
+    characters: clampArray(d.characters, 5).map(v => clampString(v, 40)).filter(Boolean),
+    ui_elements: clampArray(d.ui_elements, 6).map(v => clampString(v, 40)).filter(Boolean),
   };
 }
 
-function heuristicDirection(beat, idx, palette) {
+export function heuristicDirection(beat, idx, palette) {
   const allowedTypes = SCENE_TYPE_FOR_ROLE[beat.beat_role] || ['definition'];
   const hasNumber = /\d/.test(beat.speaker_cue || '');
-  const sceneType = beat.beat_role === 'scale' && !hasNumber ? 'visual_metaphor' : allowedTypes[0];
+  const sceneType = SCENE_TYPE_FOR_STAGE[beat.teaching_stage]
+    || (beat.beat_role === 'scale' && !hasNumber ? 'visual_metaphor' : allowedTypes[0]);
   const layouts = VALID_LAYOUTS.filter(l => l !== 'center');
   const layout = layouts[idx % layouts.length];
   const cameras = ['zoom_in', 'zoom_out', 'pan_left', 'pan_right', 'static'];
@@ -210,6 +297,11 @@ function heuristicDirection(beat, idx, palette) {
   const transitions = ['fade', 'sweep_left', 'sweep_right', 'zoom_in', 'flash'];
   const transition = transitions[idx % transitions.length];
   const cue = beat.speaker_cue || beat.intent || '';
+  const cueWords = cue.replace(/[^\w\s-]/g, ' ').split(/\s+/).filter(Boolean);
+  const topicLabel = cueWords.slice(0, 3).join(' ') || 'Core idea';
+  const detailLabel = cueWords.slice(3, 8).join(' ') || beat.intent || 'How it works';
+  const processLabels = sequenceLabels(cue, ['Source', 'Plan', 'Compose', 'Result']);
+  const timelineLabels = sequenceLabels(cue, ['Beginning', 'Development', 'Current state']);
   const icon = pickIconForQuery(cue) || pickIconForQuery(beat.intent) || 'Sparkles';
   const roleAssets = {
     hook: ['hero symbol', 'radial energy field'],
@@ -223,6 +315,7 @@ function heuristicDirection(beat, idx, palette) {
   return {
     intent_ref: beat.index ?? idx,
     beat_role: beat.beat_role,
+    teaching_stage: beat.teaching_stage || '',
     scene_type: sceneType,
     visual_goal: `${beat.intent || beat.beat_role}: visualize "${cue.slice(0, 80)}"`,
     layout,
@@ -246,6 +339,87 @@ function heuristicDirection(beat, idx, palette) {
     colors: [palette.primary, palette.secondary, palette.tertiary],
     emphasis_keywords: [],
     mood: beat.beat_role,
+    concept_items: sceneType === 'concept' ? [`${topicLabel}: Core idea`, `${detailLabel}: Key mechanism`] : [],
+    code_lines: [],
+    layers: sceneType === 'architecture' ? ['Source', 'Core system', 'Interface', 'Result'] : [],
+    formula: '',
+    flow_steps: sceneType === 'prediction' ? ['Input', 'Analysis', 'Decision', 'Result'] : [],
+    milestones: sceneType === 'timeline'
+      ? timelineLabels.map((label, i) => ({ label, year: i === timelineLabels.length - 1 ? 'Now' : '' }))
+      : [],
+    steps: ['process', 'data_flow', 'diagram', 'network'].includes(sceneType)
+      ? processLabels.slice(0, 4).map((label, i) => ({
+          label,
+          icon: ['CircleDot', 'Search', 'Layers', 'CheckCircle'][i] || 'CircleDot',
+        }))
+      : [],
+  };
+}
+
+function heuristicCinematicDirection(beat, idx, palette) {
+  const cue = beat.speaker_cue || beat.intent || '';
+  const lower = cue.toLowerCase();
+  const camera = ['zoom_in', 'pan_left', 'pan_right', 'static', 'zoom_out'][idx % 5];
+  const setting =
+    /\b(phone|app|map|tap|location|request)\b/.test(lower) ? 'smartphone close-up' :
+    /\b(volunteer|verified|alert|notification)\b/.test(lower) ? 'nearby volunteer receives alert' :
+    /\b(safe|well-lit|relief|smiles|walk together)\b/.test(lower) ? 'well-lit public area' :
+    /\b(community|neighborhood|families|streets)\b/.test(lower) ? 'connected city montage' :
+    /\b(logo|tagline|download|guardian)\b/.test(lower) && beat.beat_role === 'summary' ? 'minimal brand end card' :
+    'quiet evening street';
+  const action =
+    setting === 'smartphone close-up' ? 'phone map opens and trusted help becomes visible' :
+    setting === 'nearby volunteer receives alert' ? 'verified volunteers see the request and one accepts' :
+    setting === 'well-lit public area' ? 'two people meet calmly and move toward a safer street' :
+    setting === 'connected city montage' ? 'community points connect across neighborhoods' :
+    setting === 'minimal brand end card' ? 'Guardian logo and tagline fade in cleanly' :
+    'a person moves through the frame with cautious body language';
+  const emotion =
+    beat.beat_role === 'hook' ? 'uncertainty' :
+    beat.beat_role === 'summary' ? 'hope' :
+    /\b(relief|safe|trust|together|community)\b/.test(lower) ? 'reassurance' :
+    'calm tension';
+  const icon = pickIconForQuery(cue) || 'ShieldCheck';
+  return {
+    intent_ref: beat.index ?? idx,
+    beat_role: beat.beat_role,
+    teaching_stage: 'cinematic',
+    scene_type: 'cinematic',
+    force_cinematic: true,
+    visual_goal: `${action}. Keep it realistic and emotional, not instructional.`,
+    layout: 'center',
+    primary_asset: setting,
+    secondary_assets: ['cinematic lighting', 'subtle UI overlay', 'human expression'],
+    icon_hints: [icon],
+    icons: [icon],
+    text_blocks: [{ role: beat.beat_role === 'summary' ? 'title' : 'caption', text: cue, emphasis_words: [] }],
+    motion_choreography: ['0.0s: cinematic shot fades in', '1.2s: camera drifts slowly', '2.8s: focus highlight appears'],
+    animations: ['0.0s: cinematic shot fades in', '1.2s: camera drifts slowly', '2.8s: focus highlight appears'],
+    camera_motion: camera,
+    transition_style: idx === 0 ? 'fade' : 'cut',
+    decorative_elements: ['particles', 'light_ray'],
+    color_hint: palette.primary,
+    colors: [palette.primary, palette.secondary, palette.tertiary],
+    emphasis_keywords: [],
+    mood: emotion,
+    cinematic: {
+      setting,
+      shot: setting === 'smartphone close-up' ? 'close-up insert' : setting === 'minimal brand end card' ? 'clean end card' : 'wide cinematic shot',
+      action,
+      emotion,
+      lighting: /\b(night|evening|street|unsafe|quiet)\b/.test(lower) ? 'warm streetlights with cool shadows' : 'soft hopeful light',
+    },
+    characters: /\b(volunteer|community|together|families)\b/.test(lower) ? ['user', 'verified volunteer', 'community'] : ['user'],
+    ui_elements: /\b(phone|app|map|tap|location|request|contact|volunteer)\b/.test(lower)
+      ? ['map', 'verified volunteers', 'request assistance', 'location shared']
+      : [],
+    concept_items: [],
+    code_lines: [],
+    layers: [],
+    formula: '',
+    flow_steps: [],
+    milestones: [],
+    steps: [],
   };
 }
 
@@ -272,6 +446,7 @@ function tryParseJson(text) {
 
 export async function directScenes({ content }) {
   const beats = content.story_beats || [];
+  const cinematic = isCinematicStory(content);
   const palette = content.palette || {
     primary: '#3B82F6', secondary: '#8B5CF6', tertiary: '#06B6D4', glow: '#3B82F6',
   };
@@ -294,6 +469,7 @@ export async function directScenes({ content }) {
       concepts: content.concepts,
       key_takeaways: content.key_takeaways,
       story_beats: beats,
+      visual_mode: cinematic ? 'cinematic_movie_scene' : 'explainer_motion_graphics',
     },
     palette: {
       primary: palette.primary,
@@ -323,7 +499,7 @@ export async function directScenes({ content }) {
         const parsed = tryParseJson(text);
         if (parsed && Array.isArray(parsed.scene_directions)) {
           const directions = diversifyLayouts(parsed.scene_directions
-            .map((d, i) => validateDirection(d, palette, beats[i] || beats[0], i))
+            .map((d, i) => validateDirection(cinematic ? { ...d, force_cinematic: true } : d, palette, beats[i] || beats[0], i))
             .filter(Boolean));
           if (directions.length === beats.length) {
             const visualMetaphors = Array.isArray(parsed.visual_metaphors)
@@ -366,7 +542,9 @@ export async function directScenes({ content }) {
       source: 'heuristic',
       visual_metaphors: [],
       color_story: {},
-      scene_directions: beats.map((b, i) => heuristicDirection(b, i, palette)),
+      scene_directions: beats.map((b, i) => (
+        cinematic ? heuristicCinematicDirection(b, i, palette) : heuristicDirection(b, i, palette)
+      )),
     };
   }
 

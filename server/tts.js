@@ -87,6 +87,11 @@ export function pcmToWavBuffer(pcmBytes, options = {}) {
 
 export async function synthesizeSpeech(script, outPath) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${config.gemini.ttsModel}:generateContent`;
+  const estimatedNarrationMs = (wordCount(script) / Math.max(80, config.limits.wordsPerMinute)) * 60_000;
+  const timeoutMs = Math.min(
+    360_000,
+    Math.max(config.gemini.ttsTimeoutMs, Math.ceil(estimatedNarrationMs * 1.5)),
+  );
 
   const body = {
     contents: [{ parts: [{ text: `Read the following script aloud in a clear, neutral tone:\n\n${script}` }] }],
@@ -106,7 +111,7 @@ export async function synthesizeSpeech(script, outPath) {
     try {
       resp = await axios.post(`${url}?key=${config.geminiApiKey}`, body, {
         headers: { 'Content-Type': 'application/json' },
-        timeout: 60_000,
+        timeout: timeoutMs,
         responseType: 'json',
         validateStatus: () => true,
       });
@@ -124,7 +129,7 @@ export async function synthesizeSpeech(script, outPath) {
       }
     }
     const delayMs = attempt * 1500;
-    console.warn(`[tts] synthesis attempt ${attempt} failed; retrying in ${delayMs}ms`);
+    console.warn(`[tts] synthesis attempt ${attempt} failed after a ${timeoutMs}ms limit; retrying in ${delayMs}ms`);
     await sleep(delayMs);
   }
 

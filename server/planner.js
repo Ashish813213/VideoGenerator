@@ -39,6 +39,10 @@ const VALID_ANIMS = new Set([
 const VALID_LAYOUTS = new Set(['center','left','right','top','bottom','split','floating','grid']);
 const VALID_DECORATIVE = new Set(['floating_circles','blobs','dots','lines','grid','pulse','particles','sweep','light_ray']);
 const VALID_HEX = /^#([0-9a-fA-F]{3}){1,2}$/;
+const PROCESS_SCENE_TYPES = new Set(['process', 'network', 'data_flow', 'diagram']);
+const PRESENTER_POSITIONS = new Set(['left', 'right']);
+const PRESENTER_EMOTIONS = new Set(['calm', 'concerned', 'reassuring', 'confident', 'hopeful', 'excited', 'serious']);
+const PRESENTER_GESTURES = new Set(['explain', 'point', 'reassure', 'alert', 'celebrate', 'think', 'walk']);
 
 function safeStr(v, max = 80) {
   if (typeof v !== 'string') return '';
@@ -57,6 +61,40 @@ function safeStr(v, max = 80) {
 }
 
 function safeArray(v) { return Array.isArray(v) ? v : []; }
+
+function clampSet(value, allowed, fallback) {
+  return allowed.has(value) ? value : fallback;
+}
+
+function presenterForScene(s, sceneType, layout, beatRole) {
+  const raw = s.presenter && typeof s.presenter === 'object' ? s.presenter : {};
+  const enabled = raw.enabled !== false;
+  const defaultPosition = layout === 'right' ? 'left' : 'right';
+  const role = String(beatRole || '').toLowerCase();
+  const mood = String(s.mood || '').toLowerCase();
+  const emotion =
+    role === 'hook' || mood.includes('risk') || mood.includes('warning') ? 'concerned' :
+    role === 'summary' ? 'hopeful' :
+    role === 'consequence' ? 'serious' :
+    mood.includes('surprise') ? 'excited' :
+    'reassuring';
+  const gesture =
+    role === 'hook' ? 'alert' :
+    role === 'summary' ? 'celebrate' :
+    sceneType === 'process' || sceneType === 'diagram' || sceneType === 'data_flow' || sceneType === 'network' ? 'point' :
+    sceneType === 'timeline' ? 'walk' :
+    sceneType === 'formula' || sceneType === 'code' || sceneType === 'architecture' ? 'explain' :
+    'reassure';
+  const fallbackSpeech = safeStr(s.subtitle || s.title || 'Let me explain', 46);
+  return {
+    enabled,
+    style: 'stickman',
+    position: clampSet(raw.position, PRESENTER_POSITIONS, defaultPosition),
+    emotion: clampSet(raw.emotion, PRESENTER_EMOTIONS, emotion),
+    gesture: clampSet(raw.gesture, PRESENTER_GESTURES, gesture),
+    speech: safeStr(raw.speech, 54) || fallbackSpeech,
+  };
+}
 
 function validateScene(s, i, totalMs) {
   const sceneType = SCENE_TYPE_LIST.includes(s.scene_type) ? s.scene_type : 'definition';
@@ -88,6 +126,11 @@ function validateScene(s, i, totalMs) {
       timeline: ['lines', 'dots'],
       comparison: ['floating_circles'],
       summary: ['floating_circles', 'dots'],
+      concept: ['grid', 'dots'],
+      code: ['grid', 'lines'],
+      architecture: ['lines', 'dots'],
+      formula: ['grid', 'dots'],
+      prediction: ['lines', 'dots'],
     };
     decorative.push(...(defaults[sceneType] || ['dots']));
   }
@@ -119,25 +162,52 @@ function validateScene(s, i, totalMs) {
     transition_style: typeof s.transition_style === 'string' ? s.transition_style : 'cut',
     mood: safeStr(s.mood, 40),
     beat_role: safeStr(s.beat_role, 20),
+    teaching_stage: safeStr(s.teaching_stage, 20),
   };
+
+  out.presenter = presenterForScene(s, sceneType, layout, out.beat_role);
+  if (sceneType === 'cinematic') {
+    const rawCinematic = s.cinematic && typeof s.cinematic === 'object' ? s.cinematic : {};
+    out.cinematic = {
+      setting: safeStr(rawCinematic.setting || s.primary_asset, 80),
+      shot: safeStr(rawCinematic.shot || 'wide cinematic shot', 80),
+      action: safeStr(rawCinematic.action || s.visual_goal || s.subtitle, 120),
+      emotion: safeStr(rawCinematic.emotion || s.mood || 'calm tension', 40),
+      lighting: safeStr(rawCinematic.lighting || 'soft cinematic light', 60),
+    };
+    out.characters = safeArray(s.characters).map(x => safeStr(x, 40)).filter(Boolean).slice(0, 5);
+    out.ui_elements = safeArray(s.ui_elements).map(x => safeStr(x, 40)).filter(Boolean).slice(0, 6);
+  }
 
   if (sceneType === 'stat') {
     out.value = safeStr(s.value, 20) || '0';
     out.label = safeStr(s.label, 60);
   }
-  if (sceneType === 'process') {
+  if (PROCESS_SCENE_TYPES.has(sceneType)) {
     out.steps = safeArray(s.steps).map(st => ({
       label: safeStr(typeof st === 'object' ? st?.label : st, 20),
       icon: typeof st === 'object' && st?.icon ? (normalizeLucideName(st.icon) || null) : null,
     })).filter(st => st.label).slice(0, 4);
-    if (!out.steps.length) out.steps = [{ label: 'Step 1', icon: null }];
+    if (out.steps.length < 2) {
+      out.steps = [
+        { label: 'Source', icon: 'CircleDot' },
+        { label: 'Transform', icon: 'RefreshCw' },
+        { label: 'Result', icon: 'CheckCircle' },
+      ];
+    }
   }
   if (sceneType === 'timeline') {
     out.milestones = safeArray(s.milestones).map(m => ({
       label: safeStr(typeof m === 'object' ? m?.label : m, 20),
       year: safeStr(typeof m === 'object' ? m?.year : '', 12),
     })).filter(m => m.label).slice(0, 5);
-    if (!out.milestones.length) out.milestones = [{ label: 'Now', year: '' }];
+    if (out.milestones.length < 2) {
+      out.milestones = [
+        { label: 'Beginning', year: '' },
+        { label: 'Development', year: '' },
+        { label: 'Current state', year: 'Now' },
+      ];
+    }
   }
   if (sceneType === 'comparison') {
     const left = s.left && typeof s.left === 'object' ? s.left : {};
@@ -161,6 +231,36 @@ function validateScene(s, i, totalMs) {
       icon: typeof t === 'object' && t?.icon ? (normalizeLucideName(t.icon) || null) : null,
     })).filter(t => t.text).slice(0, 3);
     if (!out.takeaways.length) out.takeaways = [{ text: 'Key point', icon: null }];
+  }
+  if (sceneType === 'concept') {
+    out.concept_items = safeArray(s.concept_items)
+      .map(item => safeStr(typeof item === 'object' ? item?.label : item, 60))
+      .filter(Boolean)
+      .slice(0, 5);
+    if (out.concept_items.length < 2) {
+      out.concept_items = [out.title || 'Core idea', out.subtitle || 'How it works'];
+    }
+  }
+  if (sceneType === 'code') {
+    out.code_lines = safeArray(s.code_lines).map(line => safeStr(line, 100)).filter(Boolean).slice(0, 8);
+    if (!out.code_lines.length) out.code_lines = [`# ${out.title || 'Example'}`, out.subtitle || 'result = process(input)'];
+  }
+  if (sceneType === 'architecture') {
+    out.layers = safeArray(s.layers)
+      .map(layer => safeStr(typeof layer === 'object' ? layer?.label : layer, 40))
+      .filter(Boolean)
+      .slice(0, 6);
+    if (out.layers.length < 2) out.layers = ['Source', 'Core system', 'Interface', 'Result'];
+  }
+  if (sceneType === 'formula') {
+    out.formula = safeStr(s.formula, 120) || out.subtitle || out.title || 'Relationship';
+  }
+  if (sceneType === 'prediction') {
+    out.flow_steps = safeArray(s.flow_steps)
+      .map(step => safeStr(typeof step === 'object' ? step?.label : step, 40))
+      .filter(Boolean)
+      .slice(0, 6);
+    if (out.flow_steps.length < 2) out.flow_steps = ['Input', 'Analysis', 'Decision', 'Result'];
   }
   if (sceneType === 'hero' || sceneType === 'definition' || sceneType === 'callout') {
     if (!out.lucide_icon_name) {

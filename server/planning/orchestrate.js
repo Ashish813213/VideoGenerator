@@ -8,9 +8,10 @@ import { config } from '../config.js';
 import { detectTopic, paletteFor } from '../design.js';
 
 const PLAN_CACHE_DIR = path.join(config.paths.jobs, '.plan_cache');
+const PLANNER_VERSION = 'v14-presenter-character';
 
 function scriptKey(script) {
-  return crypto.createHash('md5').update(script.trim().toLowerCase()).digest('hex');
+  return crypto.createHash('md5').update(`${PLANNER_VERSION}:${script.trim().toLowerCase()}`).digest('hex');
 }
 
 async function ensureCacheDir() {

@@ -165,6 +165,12 @@ export const SCENE_TYPES = {
   DATA_FLOW: 'data_flow',
   DIAGRAM: 'diagram',
   RELATIONSHIP: 'relationship',
+  CONCEPT: 'concept',
+  CODE: 'code',
+  ARCHITECTURE: 'architecture',
+  FORMULA: 'formula',
+  PREDICTION: 'prediction',
+  CINEMATIC: 'cinematic',
 };
 
 export const SCENE_TYPE_LIST = Object.values(SCENE_TYPES);
@@ -175,6 +181,12 @@ export const SCENE_TYPE_FALLBACK = {
   data_flow: 'process',
   diagram: 'process',
   relationship: 'comparison',
+  concept: 'definition',
+  code: 'process',
+  architecture: 'process',
+  formula: 'definition',
+  prediction: 'process',
+  cinematic: 'hero',
 };
 
 export const LAYOUTS = ['center', 'left', 'right', 'top', 'bottom', 'split', 'floating', 'grid'];

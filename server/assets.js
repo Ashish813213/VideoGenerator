@@ -11,6 +11,7 @@ const ICON_DIR = path.join(config.paths.assets, 'icons');
 const IMAGE_DIR = path.join(config.paths.assets, 'images');
 const IMAGE_CACHE_PATH = path.join(config.paths.assets, '_image_cache.json');
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const PROCESS_SCENE_TYPES = new Set(['process', 'network', 'data_flow', 'diagram']);
 
 let imageCache = null;
 async function loadImageCache() {
@@ -150,7 +151,7 @@ export async function resolveSceneVisual(scene) {
 
   const wantIconNames = new Set();
   if (scene.lucide_icon_name) wantIconNames.add(scene.lucide_icon_name);
-  if (scene.scene_type === 'process' && Array.isArray(scene.steps)) {
+  if (PROCESS_SCENE_TYPES.has(scene.scene_type) && Array.isArray(scene.steps)) {
     for (const s of scene.steps) if (s.icon) wantIconNames.add(s.icon);
   }
   if (scene.scene_type === 'summary' && Array.isArray(scene.takeaways)) {

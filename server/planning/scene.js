@@ -7,6 +7,7 @@ const genAI = new GoogleGenerativeAI(config.geminiApiKey);
 const VALID_SCENE_TYPES = [
   'hero', 'definition', 'callout', 'stat', 'process', 'timeline', 'comparison', 'summary',
   'visual_metaphor', 'network', 'data_flow', 'diagram', 'relationship',
+  'concept', 'code', 'architecture', 'formula', 'prediction', 'cinematic',
 ];
 
 const VALID_ANIMS = [
@@ -15,6 +16,10 @@ const VALID_ANIMS = [
 ];
 
 const VALID_LAYOUTS = ['center', 'left', 'right', 'top', 'bottom', 'split', 'floating', 'grid'];
+const PROCESS_SCENE_TYPES = new Set(['process', 'network', 'data_flow', 'diagram']);
+const PRESENTER_POSITIONS = ['left', 'right'];
+const PRESENTER_EMOTIONS = ['calm', 'concerned', 'reassuring', 'confident', 'hopeful', 'excited', 'serious'];
+const PRESENTER_GESTURES = ['explain', 'point', 'reassure', 'alert', 'celebrate', 'think', 'walk'];
 
 const SYSTEM_PROMPT = `You are a Scene Planner translating Visual Direction into a concrete renderable scene spec. Each scene you produce will be passed directly to an FFmpeg-based renderer — your output must be COMPLETE, premium, and RENDERABLE.
 
@@ -27,7 +32,7 @@ For each scene_direction in the storyboard, output ONE scene spec.
 
 RULES
 
-1. SCENE_TYPE — use the scene_type from the storyboard unchanged. Do not invent new types. The renderer knows all of: hero, definition, callout, stat, process, timeline, comparison, summary, visual_metaphor, network, data_flow, diagram, relationship.
+1. SCENE_TYPE — use the scene_type from the storyboard unchanged. Do not invent new types. The renderer knows all of: hero, definition, callout, stat, process, timeline, comparison, summary, visual_metaphor, network, data_flow, diagram, relationship, concept, code, architecture, formula, prediction.
 
 2. LAYOUT — use the layout_type/layout from the storyboard unchanged. Allowed: center, left, right, top, bottom, split, floating, grid.
 
@@ -77,6 +82,11 @@ RULES
    - "timeline" → must have "milestones" (array of 2-5 objects: { label, year })
    - "comparison" → must have "left" and "right" (objects: { title, points[], icon, color })
    - "summary"  → must have "takeaways" (array of exactly 3 objects: { text, icon }) pulled from content.key_takeaways
+   - "concept"  → must have "concept_items" (2-5 progressive representations)
+   - "code" → must have "code_lines" (2-8 essential lines, no editor chrome)
+   - "architecture" → must have "layers" (3-6 concise layer names)
+   - "formula" → must have "formula" (one compact plain-text formula)
+   - "prediction" → must have "flow_steps" (3-6 labels from input to prediction)
 
 13. NO POWERPOINT TEXT — the title is the largest type on screen. The subtitle is small. Do not produce paragraphs. Do not produce bullet points in title.
 
@@ -112,6 +122,7 @@ Schema per scene:
   "transition_style": "fade",
   "mood": "...",
   "beat_role": "...",
+  "teaching_stage": "...",
   "emphasis_keywords": ["..."],
   "colors": ["#RRGGBB", "#RRGGBB"],
   "value": "...",
@@ -120,7 +131,12 @@ Schema per scene:
   "milestones": [],
   "left": {},
   "right": {},
-  "takeaways": []
+  "takeaways": [],
+  "concept_items": [],
+  "code_lines": [],
+  "layers": [],
+  "formula": "",
+  "flow_steps": []
 }`;
 
 function safeStr(v, max = 200) {
@@ -138,6 +154,36 @@ function safeHex(v, fallback) {
 
 function clampIn(v, allowed, fallback) {
   return allowed.includes(v) ? v : fallback;
+}
+
+function presenterForScene(s, sceneType, layout, beatRole) {
+  const raw = s.presenter && typeof s.presenter === 'object' ? s.presenter : {};
+  const enabled = raw.enabled !== false;
+  const defaultPosition = layout === 'right' ? 'left' : 'right';
+  const role = String(beatRole || '').toLowerCase();
+  const mood = String(s.mood || '').toLowerCase();
+  const emotion =
+    role === 'hook' || mood.includes('risk') || mood.includes('warning') ? 'concerned' :
+    role === 'summary' ? 'hopeful' :
+    role === 'consequence' ? 'serious' :
+    mood.includes('surprise') ? 'excited' :
+    'reassuring';
+  const gesture =
+    role === 'hook' ? 'alert' :
+    role === 'summary' ? 'celebrate' :
+    PROCESS_SCENE_TYPES.has(sceneType) ? 'point' :
+    sceneType === 'timeline' ? 'walk' :
+    sceneType === 'formula' || sceneType === 'code' || sceneType === 'architecture' ? 'explain' :
+    'reassure';
+  const fallbackSpeech = safeStr(s.subtitle || s.title || 'Let me explain', 54);
+  return {
+    enabled,
+    style: 'stickman',
+    position: clampIn(raw.position, PRESENTER_POSITIONS, defaultPosition),
+    emotion: clampIn(raw.emotion, PRESENTER_EMOTIONS, emotion),
+    gesture: clampIn(raw.gesture, PRESENTER_GESTURES, gesture),
+    speech: safeStr(raw.speech, 54) || fallbackSpeech,
+  };
 }
 
 function validateScene(s, beat, idx, palette, totalMs, content) {
@@ -186,9 +232,24 @@ function validateScene(s, beat, idx, palette, totalMs, content) {
     transition_style: clampIn(s.transition_style, ['cut', 'fade', 'zoom_in', 'zoom_out', 'sweep_left', 'sweep_right', 'flash'], 'cut'),
     mood: safeStr(s.mood, 40),
     beat_role: safeStr(s.beat_role, 20) || (beat?.beat_role || ''),
+    teaching_stage: safeStr(s.teaching_stage, 20) || (beat?.teaching_stage || ''),
     emphasis_keywords: safeArray(s.emphasis_keywords).map(x => safeStr(x, 30)).slice(0, 6),
     colors: safeArray(s.colors).map(x => safeHex(x, palette.primary)).slice(0, 4),
   };
+
+  out.presenter = presenterForScene(s, sceneType, layout, out.beat_role);
+  if (sceneType === 'cinematic') {
+    const rawCinematic = s.cinematic && typeof s.cinematic === 'object' ? s.cinematic : {};
+    out.cinematic = {
+      setting: safeStr(rawCinematic.setting || s.primary_asset, 80),
+      shot: safeStr(rawCinematic.shot || 'wide cinematic shot', 80),
+      action: safeStr(rawCinematic.action || s.visual_goal || s.subtitle, 120),
+      emotion: safeStr(rawCinematic.emotion || s.mood || 'calm tension', 40),
+      lighting: safeStr(rawCinematic.lighting || 'soft cinematic light', 60),
+    };
+    out.characters = safeArray(s.characters).map(x => safeStr(x, 40)).filter(Boolean).slice(0, 5);
+    out.ui_elements = safeArray(s.ui_elements).map(x => safeStr(x, 40)).filter(Boolean).slice(0, 6);
+  }
 
   if (!out.title && Array.isArray(s.text_blocks)) {
     const titleBlock = s.text_blocks.find(tb => tb && tb.role === 'title');
@@ -203,19 +264,31 @@ function validateScene(s, beat, idx, palette, totalMs, content) {
     out.value = safeStr(s.value, 20) || '0';
     out.label = safeStr(s.label, 80);
   }
-  if (sceneType === 'process') {
+  if (PROCESS_SCENE_TYPES.has(sceneType)) {
     out.steps = safeArray(s.steps).slice(0, 4).map(st => ({
       label: safeStr(typeof st === 'object' ? st?.label : st, 20),
       icon: typeof st === 'object' && st?.icon ? safeStr(st.icon, 30) : null,
     })).filter(st => st.label);
-    if (!out.steps.length) out.steps = [{ label: 'Step 1', icon: null }];
+    if (out.steps.length < 2) {
+      out.steps = [
+        { label: 'Source', icon: 'CircleDot' },
+        { label: 'Transform', icon: 'RefreshCw' },
+        { label: 'Result', icon: 'CheckCircle' },
+      ];
+    }
   }
   if (sceneType === 'timeline') {
     out.milestones = safeArray(s.milestones).slice(0, 5).map(m => ({
       label: safeStr(typeof m === 'object' ? m?.label : m, 20),
       year: safeStr(typeof m === 'object' ? m?.year : '', 12),
     })).filter(m => m.label);
-    if (!out.milestones.length) out.milestones = [{ label: 'Now', year: '' }];
+    if (out.milestones.length < 2) {
+      out.milestones = [
+        { label: 'Beginning', year: '' },
+        { label: 'Development', year: '' },
+        { label: 'Current state', year: 'Now' },
+      ];
+    }
   }
   if (sceneType === 'comparison') {
     const left = (s.left && typeof s.left === 'object') ? s.left : {};
@@ -245,6 +318,36 @@ function validateScene(s, beat, idx, palette, totalMs, content) {
     if (out.takeaways.length === 0) {
       out.takeaways = [{ text: 'Key insight', icon: null }];
     }
+  }
+  if (sceneType === 'concept') {
+    out.concept_items = safeArray(s.concept_items)
+      .map(item => safeStr(typeof item === 'object' ? item?.label : item, 60))
+      .filter(Boolean)
+      .slice(0, 5);
+    if (out.concept_items.length < 2) {
+      out.concept_items = [out.title || 'Core idea', out.subtitle || 'How it works'];
+    }
+  }
+  if (sceneType === 'code') {
+    out.code_lines = safeArray(s.code_lines).map(line => safeStr(line, 100)).filter(Boolean).slice(0, 8);
+    if (!out.code_lines.length) out.code_lines = [`# ${out.title || 'Example'}`, out.subtitle || 'result = process(input)'];
+  }
+  if (sceneType === 'architecture') {
+    out.layers = safeArray(s.layers)
+      .map(layer => safeStr(typeof layer === 'object' ? layer?.label : layer, 40))
+      .filter(Boolean)
+      .slice(0, 6);
+    if (out.layers.length < 2) out.layers = ['Source', 'Core system', 'Interface', 'Result'];
+  }
+  if (sceneType === 'formula') {
+    out.formula = safeStr(s.formula, 120) || out.subtitle || out.title || 'Relationship';
+  }
+  if (sceneType === 'prediction') {
+    out.flow_steps = safeArray(s.flow_steps)
+      .map(step => safeStr(typeof step === 'object' ? step?.label : step, 40))
+      .filter(Boolean)
+      .slice(0, 6);
+    if (out.flow_steps.length < 2) out.flow_steps = ['Input', 'Analysis', 'Decision', 'Result'];
   }
 
   return out;
@@ -309,18 +412,28 @@ function heuristicScene(beat, direction, idx, palette, content) {
     transition_style: d.transition_style || 'cut',
     mood: d.mood || '',
     beat_role: beat?.beat_role || '',
+    teaching_stage: beat?.teaching_stage || d.teaching_stage || '',
   };
   if (sceneType === 'stat') {
     const number = (beat?.speaker_cue || '').match(/\b\d[\d,.]*%?\b/)?.[0];
     out.value = number || '1';
     out.label = number ? shortTitle(beat?.intent, 'KEY STAT') : 'KEY IDEA';
   }
-  if (sceneType === 'process' || sceneType === 'data_flow' || sceneType === 'diagram' || sceneType === 'network') {
-    out.steps = [
+  if (PROCESS_SCENE_TYPES.has(sceneType)) {
+    out.steps = d.steps?.length ? d.steps : [
       { label: 'Input', icon: 'CircleDot' },
       { label: 'Transform', icon: 'RefreshCw' },
       { label: 'Output', icon: 'Zap' },
     ];
+  }
+  if (sceneType === 'timeline') {
+    out.milestones = d.milestones?.length >= 2
+      ? d.milestones
+      : [
+          { label: 'Beginning', year: '' },
+          { label: 'Development', year: '' },
+          { label: 'Current state', year: 'Now' },
+        ];
   }
   if (sceneType === 'comparison' || sceneType === 'relationship') {
     out.left = { title: 'Without', points: ['Low output', 'System strain'], icon: 'XCircle', color: '#EF4444' };
@@ -331,6 +444,27 @@ function heuristicScene(beat, direction, idx, palette, content) {
       text: safeStr(text, 80) || `Key point ${i + 1}`,
       icon: ['CheckCircle', 'Zap', 'Lightbulb'][i],
     }));
+  }
+  if (sceneType === 'concept') {
+    out.concept_items = d.concept_items?.length
+      ? d.concept_items
+      : [title || 'Core idea', subtitle || 'How it works'];
+  }
+  if (sceneType === 'code') {
+    out.code_lines = d.code_lines?.length
+      ? d.code_lines
+      : [`# ${title || 'Example'}`, subtitle || 'result = process(input)'];
+  }
+  if (sceneType === 'architecture') {
+    out.layers = d.layers?.length ? d.layers : ['Source', 'Core system', 'Interface', 'Result'];
+  }
+  if (sceneType === 'formula') {
+    out.formula = d.formula || subtitle || title || 'Relationship';
+  }
+  if (sceneType === 'prediction') {
+    out.flow_steps = d.flow_steps?.length
+      ? d.flow_steps
+      : ['Input', 'Analysis', 'Decision', 'Result'];
   }
   return out;
 }

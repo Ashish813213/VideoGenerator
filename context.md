@@ -84,7 +84,11 @@ Current verified TTS configuration:
 - `SKIP_TTS=false`
 - model: `gemini-2.5-flash-preview-tts`
 - voice: `Kore`
+- base request timeout: 180 seconds
 - Gemini returns raw `audio/L16;codec=pcm;rate=24000`
+
+The model, voice, and base timeout can be overridden with
+`GEMINI_TTS_MODEL`, `GEMINI_TTS_VOICE`, and `TTS_TIMEOUT_MS`.
 
 Never commit `.env` or copy API key values into documentation/logs. Keys previously
 shared outside the environment file should be rotated.
@@ -295,6 +299,140 @@ Verification:
 - The verified clip is 1920x1080, H.264 High, `yuv420p`, 30 fps, and 4.00 seconds.
 - `node --check server/scenes/index.js` and `git diff --check` passed.
 
+## Dynamic Explainer Scene Engine
+
+The June 8 tutorial reference supplied useful visual patterns, but it is not a
+fixed content template. The planner derives a visual arc from every script's
+actual topic and only selects specialized scenes when supported by the narration.
+
+The planning pipeline now carries a `teaching_stage` on each content beat. Long
+tutorials can use 7-13 beats instead of being compressed into the previous
+six-to-eight-beat limit. Heuristic planning selects 8 beats below 60 seconds,
+10 beats from 60-100 seconds, and up to 13 beats for longer tutorials.
+
+Five additional scene types are available:
+
+- `concept`: progressive representations of topic-specific ideas
+- `code`: essential code lines beside a generated visual output, without IDE chrome
+- `architecture`: named layers connected by directional data flow
+- `formula`: one formula paired with a visual graph or behavior explanation
+- `prediction`: an end-to-end input-to-decision pipeline
+
+Content signals control scene selection:
+
+- historical language enables timelines
+- explicit comparisons enable contrast scenes
+- meaningful numbers enable stat/evidence scenes
+- code terms enable code scenes
+- systems and component language enable architecture scenes
+- real equations or quantitative rules enable formula scenes
+- forecasting or classification language enables prediction scenes
+
+Unrelated scripts do not receive tensor, AI, code, ReLU, architecture, or
+prediction terminology by default.
+
+The structured scene fields are:
+
+- `concept_items`
+- `code_lines`
+- `layers`
+- `formula`
+- `flow_steps`
+- `teaching_stage`
+
+These educational scene types are diagram-first and do not request stock photos.
+Planner cache keys now include `v12-dynamic-explainer`, preventing older cached
+plans from hiding the new scene vocabulary and teaching arc.
+
+Verification:
+
+- Representative clips were rendered under `jobs/_education_check/`.
+- A five-scene contact sheet is available at `frames/education-contact.png`.
+- Concept, code, architecture, formula, and prediction graphs all rendered
+  through the primary FFmpeg path without fallback warnings.
+- The verified clips are 1920x1080 H.264 High, `yuv420p`, and 30 fps.
+- Cross-topic samples for bread fermentation, compound interest, a city water
+  system, and weather forecasting are under `jobs/_dynamic_check/`.
+- Their contact sheet is `frames/dynamic-contact.png`.
+
+Formula scenes use a dedicated equation wrapper rather than the prose wrapper.
+Equations are tokenized around mathematical operators, retain every token, and
+shrink across as many as five centered lines instead of being truncated with an
+ellipsis. Stress renders for compound growth, energy, probability, and loan
+payment formulas are under `jobs/_formula_check/`, with a contact sheet at
+`frames/formula-contact.png`.
+
+## Missing Timeline / Graphics Investigation
+
+Job `Z-JXaNBlQqYu` exposed two separate failures:
+
+- At 0:21, the heuristic planner treated a generic mention of "history" and
+  "timeline" as proof that the current narration needed a timeline. The selected
+  scene had no milestones, so the renderer could only draw a line and one
+  fallback point.
+- At 0:55, the diagram scene contained placeholder steps, but the older
+  transparent card-overlay path degraded to title-only output.
+
+The planner now requires multiple distinct historical signals or an explicit
+year before selecting a timeline. Timeline scenes always receive at least two
+milestones, and process aliases (`process`, `network`, `data_flow`, `diagram`)
+always receive at least two structured steps. These structured fields are
+preserved through direction and scene validation.
+
+Process cards now use direct FFmpeg panel drawing rather than transparent
+overlay cards. Step labels are bounded and wrapped, and Lucide icons are
+resolved for every process alias. The planning cache version is
+`v13-structured-visuals`, so old incomplete plans are not reused.
+
+A corrected version of the affected video is available at:
+
+`output/Z-JXaNBlQqYu-fixed.mp4`
+
+Verification frames:
+
+- `frames/job_Z/final_fixed_21.png`
+- `frames/job_Z/final_fixed_55.png`
+
+## Presenter Character Layer
+
+The renderer now supports an optional scene-level `presenter` object:
+
+```json
+{
+  "enabled": true,
+  "style": "stickman",
+  "position": "right",
+  "emotion": "reassuring",
+  "gesture": "point",
+  "speech": "Help is nearby"
+}
+```
+
+Final scene validation auto-fills this object for every scene, so the feature is
+dynamic for any script and does not depend on a hardcoded topic. The renderer
+draws a lightweight vector stickman after the scene-specific renderer completes.
+Supported emotions are `calm`, `concerned`, `reassuring`, `confident`,
+`hopeful`, `excited`, and `serious`. Supported gestures are `explain`, `point`,
+`reassure`, `alert`, `celebrate`, `think`, and `walk`.
+
+Dense card scenes (`process`, `diagram`, `network`, `data_flow`) suppress the
+presenter's speech bubble because the timed caption already carries the spoken
+text and the bubble can crowd visual cards. The character still appears and
+gestures as a guide.
+
+Smoke-test output:
+
+- `jobs/_presenter_check/scene_000.mp4`
+- `frames/presenter/stickman-check.png`
+
+Guardian sample input for testing the presenter:
+
+- `docs/guardian-stickman-videogen-script.md`
+
+Do not store Google service account JSON in the repository. Credentials should
+live in `.env`, Application Default Credentials, or a secret manager. Any private
+key pasted into chat or logs should be rotated in Google Cloud IAM.
+
 ### P1 - Gemini planning quota can bypass V10
 
 The same quota pressure can block all planner models. When that happens, V10 is
@@ -302,11 +440,10 @@ not executed and the local heuristic planner is used. The heuristic fallback now
 creates topic-specific icons, structured process/summary data, varied layouts,
 and avoids fake zero-value stat scenes, but it cannot match full Gemini direction.
 
-### P2 - TTS settings are partly hardcoded
+### P2 - TTS rate control is unused
 
-The TTS model and voice are hardcoded in `server/config.js`; `ttsRate` exists but
-is unused. Expose model/voice through environment variables and remove or
-implement rate control.
+`ttsRate` still exists in `server/config.js` but is not sent to Gemini. Remove it
+or implement supported speaking-rate control when the API exposes a stable option.
 
 ### P2 - No automated tests
 
@@ -333,7 +470,9 @@ update and must not be reverted casually.
 
 Files changed during the TTS and visual-render investigation:
 
+- `.env.example`
 - `.gitignore`
+- `server/config.js`
 - `server/tts.js`
 - `server/render.js`
 - `server/assets.js`
@@ -342,6 +481,9 @@ Files changed during the TTS and visual-render investigation:
 - `server/scenes/base.js`
 - `server/scenes/index.js`
 - `server/planning/direct.js`
+- `server/planning/understand.js`
+- `server/planning/scene.js`
+- `server/planning/orchestrate.js`
 - `assets/fonts/`
 - `context.md`
 
