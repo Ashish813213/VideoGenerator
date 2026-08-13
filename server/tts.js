@@ -6,6 +6,7 @@ import ffmpegPath from 'ffmpeg-static';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { config } from './config.js';
 
+const ffmpegBin = process.env.FFMPEG_PATH || ffmpegPath;
 const genAI = new GoogleGenerativeAI(config.geminiApiKey);
 const RETRYABLE_TTS_STATUSES = new Set([429, 500, 502, 503, 504]);
 
@@ -185,7 +186,7 @@ Return timestamps in milliseconds. Use the script to disambiguate words if neede
 
 export async function getProbeDuration(audioPath) {
   return new Promise((resolve, reject) => {
-    const p = spawn(ffmpegPath, ['-hide_banner', '-i', audioPath], { stdio: ['ignore', 'ignore', 'pipe'] });
+    const p = spawn(ffmpegBin, ['-hide_banner', '-i', audioPath], { stdio: ['ignore', 'ignore', 'pipe'] });
     let stderr = '';
     p.stderr.on('data', d => { stderr += d.toString(); });
     p.on('close', () => {
@@ -209,7 +210,7 @@ export async function getProbeDuration(audioPath) {
 
 async function generateSilentAudio(outPath, durationSec) {
   return new Promise((resolve, reject) => {
-    const p = spawn(ffmpegPath, [
+    const p = spawn(ffmpegBin, [
       '-y',
       '-f', 'lavfi',
       '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',

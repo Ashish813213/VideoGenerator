@@ -6,7 +6,7 @@ import { config } from './config.js';
 import { renderSceneType } from './scenes/index.js';
 import { paletteFor, detectTopic, TOPIC_PALETTES } from './design.js';
 
-if (ffmpegPath) ffmpeg.setFfmpegPath(ffmpegPath);
+if (ffmpegPath) ffmpeg.setFfmpegPath(process.env.FFMPEG_PATH || ffmpegPath);
 
 function runFfmpeg({ inputs, filterGraph, output, durationSec }) {
   return new Promise((resolve, reject) => {
